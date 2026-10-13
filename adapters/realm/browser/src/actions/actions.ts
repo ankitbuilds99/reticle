@@ -649,6 +649,9 @@ export async function executeAction(
   // invent a target the caller did not name.
   const anchor = named ? anchorOf(el) : {};
   const visible = isVisible(el);
+  const animating =
+    'function' === typeof el.getAnimations &&
+    el.getAnimations().some((animation) => 'running' === animation.playState || animation.pending);
   const enabled = enabledOf(el);
   const prevFocus = activeRef(el);
   const valueBefore = valueOf(el);
@@ -708,6 +711,7 @@ export async function executeAction(
     dispatched: true,
     targetMatched: named && el.isConnected,
     visible,
+    ...(animating ? { animating: true as const } : {}),
     enabled,
     defaultPrevented,
     focusMoved: prevFocus !== nextFocus ? `${prevFocus ?? 'null'}->${nextFocus ?? 'null'}` : null,

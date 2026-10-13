@@ -192,4 +192,18 @@ describe('a consequence after an unreachable action is not a clean yes', () => {
     expect(r['verified']).toBe(Verified.UNKNOWN);
     expect(r['verifiedReason']).toBe(VerifiedReason.UNREACHABLE_TARGET);
   });
+
+  it('does not reject a target whose hidden sample is explained by an active animation', async () => {
+    const r = await actAndWait(
+      page([{ visible: true }], [{ visible: true }], [posted, reenabled], {
+        visible: false,
+        animating: true,
+        domMutatedWithin: 1,
+      }),
+      SUBMITTED,
+    );
+
+    expect(r['verified']).toBe(Verified.YES);
+    expect(r['verifiedReason']).not.toBe(VerifiedReason.UNREACHABLE_TARGET);
+  });
 });

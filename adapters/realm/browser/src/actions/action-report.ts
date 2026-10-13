@@ -22,6 +22,8 @@ export interface ActionEffect {
   targetMatched: boolean;
   /** a11y isVisible(el) at the start of the action. */
   visible: boolean;
+  /** A CSS animation or transition was still running when visibility was sampled. */
+  animating?: true;
   /** Not disabled / aria-disabled at the start of the action. */
   enabled: boolean;
   /** The primary cancelable event's dispatchEvent returned false (handler called preventDefault). */
