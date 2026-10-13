@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { timeoutMsSchema } from './args/numeric-bounds.js';
 import { compileSequenceStep, pathOf } from '@/language/flows/replay.js';
+import { DEFAULT_SEQUENCE_STEP_TIMEOUT_MS } from '@/language/flows/flow-step-runners.js';
 import { sequenceStepArgs } from './act/act-preflight.js';
 import {
   REPLAY_PROGRAM_VERSION,
@@ -232,7 +233,10 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
     try {
       const inputSteps = Array.isArray(args['steps']) ? args['steps'] : [];
       assertSequenceSteps(inputSteps);
-      const perStepTimeout = 'number' === typeof args['timeout_ms'] ? args['timeout_ms'] : 8000;
+      const perStepTimeout =
+        'number' === typeof args['timeout_ms']
+          ? args['timeout_ms']
+          : DEFAULT_SEQUENCE_STEP_TIMEOUT_MS;
       const stepResults: Record<string, unknown>[] = [];
       // Every step leaves a picture of the page as its outcome was decided — see step-shots.ts.
       const pushStep = async (row: Record<string, unknown>): Promise<void> => {
