@@ -418,7 +418,7 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
     ready: z
       .boolean()
       .describe(
-        'Whether the leased tab is connected AND answering. On a reused lease this is probed, not assumed — a row in the session map is presence, not liveness. False ⇒ read notReadyReason.',
+        'Whether the leased tab is connected AND answering. It is NOT a claim that the app has hydrated, so an act can miss: make the first act reticle_act_and_wait with an `until`, or reticle_assert { action: "wait" }. Empty reads may mean not hydrated. False ⇒ read notReadyReason.',
       ),
     zeroInstall: z
       .boolean()
