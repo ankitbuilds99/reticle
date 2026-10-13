@@ -131,7 +131,7 @@ describe('act_sequence per-step progress', () => {
     })) as SequenceResult;
 
     expect(result.completed).toBe(3);
-    expect(result.recorded).toBe(0);
+    expect(result.recorded).toBe(3);
     expect(result.stalled_at).toBeUndefined();
     expect(result.dispatched).toBe(true);
     expect(result.steps).toHaveLength(3);
