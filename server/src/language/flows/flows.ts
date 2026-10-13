@@ -243,6 +243,7 @@ function buildStep(
  */
 export function recordedStepToFlowStep(step: RecordedStep): FlowStep {
   const out = anchoredStep(step);
+  if (step.timeoutMs !== undefined) out.timeoutMs = step.timeoutMs;
   if (step.page !== undefined) out.page = step.page;
   if (step.endPage !== undefined && step.endPage !== step.page) out.endPage = step.endPage;
   return out;

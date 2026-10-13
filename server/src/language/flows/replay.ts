@@ -215,7 +215,24 @@ export function compileActStep(args: Record<string, unknown>, res: unknown): Rec
     asString(args['action']) ?? '',
     replayActionArgs(args['args']),
   );
-  return { tool: ReticleTool.ACT, stable, args: compiled };
+  const timeoutMs = explicitTimeoutMs(args);
+  return {
+    tool: ReticleTool.ACT,
+    stable,
+    args: compiled,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
+}
+
+/** Keep only the timeout shape accepted by the public tool, including an intentional zero. */
+function explicitTimeoutMs(args: Record<string, unknown>): number | undefined {
+  const timeoutMs = args['timeout_ms'];
+  return 'number' === typeof timeoutMs &&
+    Number.isFinite(timeoutMs) &&
+    Number.isInteger(timeoutMs) &&
+    0 <= timeoutMs
+    ? timeoutMs
+    : undefined;
 }
 
 /**
@@ -304,7 +321,13 @@ export function compileSequenceStep(args: Record<string, unknown>, res: unknown)
     const expect = enforceableExpect(step['expect']);
     return expect === undefined ? compiled.args : { ...compiled.args, expect };
   });
-  return { tool: ReticleTool.ACT_SEQUENCE, stable, args: { steps: subSteps } };
+  const timeoutMs = explicitTimeoutMs(args);
+  return {
+    tool: ReticleTool.ACT_SEQUENCE,
+    stable,
+    args: { steps: subSteps },
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
 }
 
 /**

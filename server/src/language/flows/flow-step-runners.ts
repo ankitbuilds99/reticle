@@ -578,7 +578,8 @@ export async function runSequenceStep(
   ): Promise<Awaited<ReturnType<typeof session.command>>> => {
     session.beginAction?.(ReticleTool.FLOW_REPLAY, { steps: steps.length });
     try {
-      return await session.command(ReticleCommand.ACT_SEQUENCE, { steps });
+      const timeoutMs = step.timeoutMs === undefined ? undefined : step.timeoutMs * steps.length;
+      return await session.command(ReticleCommand.ACT_SEQUENCE, { steps }, timeoutMs);
     } finally {
       session.finishAction?.();
     }

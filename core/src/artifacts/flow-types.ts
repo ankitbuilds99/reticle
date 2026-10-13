@@ -233,7 +233,7 @@ const baseFlowStep = z.object({
   args: z.record(z.unknown()).optional(),
   expect: ExpectSchema.optional(),
   degraded: z.boolean().optional(),
-  timeoutMs: z.number().int().positive().optional(),
+  timeoutMs: z.number().int().nonnegative().optional(),
   invoke: z.string().min(1).optional(),
   /** See FlowStep.page / FlowStep.endPage. */
   page: z.string().optional(),

@@ -127,4 +127,36 @@ describe('when a sub-step declares what its own action should make true', () => 
     await run([sub('pay'), sub('close')], session);
     expect(batches).toBe(1);
   });
+
+  it('passes the recorded step timeout to the batched command', async () => {
+    let commandTimeout: number | undefined;
+    const session: FlowReplaySession = {
+      command: (name: string, _args: Record<string, unknown>, timeoutMs?: number) => {
+        if (ReticleCommand.QUERY === name) {
+          return Promise.resolve({
+            kind: 'command_result',
+            id: 'q',
+            ok: true,
+            result: { elements: [{ ref: 'e1' }] },
+          } as unknown as CommandResult);
+        }
+        if (ReticleCommand.ACT_SEQUENCE === name) commandTimeout = timeoutMs;
+        return Promise.resolve({ kind: 'command_result', id: 'a', ok: true } as CommandResult);
+      },
+      eventsSince: () => [],
+      onEvent: () => () => undefined,
+      elapsed: () => 0,
+    };
+
+    await runSequenceStep(
+      session,
+      { ...parent, timeoutMs: 20_000 },
+      0,
+      [sub('pay'), sub('close'), sub('submit')],
+      false,
+      () => Promise.resolve(),
+    );
+
+    expect(commandTimeout).toBe(60_000);
+  });
 });

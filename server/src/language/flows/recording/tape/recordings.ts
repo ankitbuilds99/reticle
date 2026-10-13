@@ -8,6 +8,8 @@ export interface RecordedStep {
   args: Record<string, unknown>;
   /** false if any ref could not be normalized to a testid (replay only valid in-session). */
   stable: boolean;
+  /** The caller's per-step wait budget, when one was explicitly provided. */
+  timeoutMs?: number;
   /** Optional post-condition annotation carried into the on-disk flow's expect. */
   expect?: Predicate;
   /**
