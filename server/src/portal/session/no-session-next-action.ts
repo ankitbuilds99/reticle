@@ -284,6 +284,58 @@ export function nextActionFor(facts: NextActionFacts): NoSessionNextAction {
     };
   }
 
+  // A current pairing-token refusal is positive evidence that the app is running and instrumented.
+  // It must outrank an empty port scan, which only says the app is outside this daemon's scan set.
+  const ports = facts.listening.join(', ');
+  const only = 1 === facts.listening.length ? facts.listening[0] : undefined;
+  const where = '' === ports ? 'on a port this daemon did not scan' : `${ports} listening`;
+
+  // A refusal against a project that IS initialised here. The daemon has the config, so this is not
+  // a scope problem — the page reached the right daemon and presented a credential it would not
+  // accept. The usual cause is a dev server that shares no filesystem with the daemon (Docker, a
+  // devcontainer, WSL): the build plugin reads-or-mints the pairing token from `$HOME/.reticle`,
+  // which over there is a different file, so it mints its own and every page is refused. The daemon
+  // holds every fact needed to say so, which is why the reason below says it rather than repeating
+  // `authentication failed`.
+  if (true === facts.initialized && true === facts.authRefused) {
+    return {
+      action: NoSessionAction.OPEN_APP,
+      ...(only === undefined ? {} : { port: only }),
+      reason:
+        `a page dialled this daemon and was refused on the pairing token (${where}), so ` +
+        'the app IS running and instrumented and this project IS wired — the page simply presented ' +
+        'a token this daemon does not own. The usual cause is a dev server that does not share a ' +
+        'filesystem with the daemon (Docker, a devcontainer, WSL): the build plugin reads the token ' +
+        'from `$HOME/.reticle/pairing-token`, which over there is a different file, so it mints its ' +
+        "own. Point the plugin at the daemon's copy — mount `~/.reticle/pairing-token` into the " +
+        `container read-only and set \`${ReticleEnv.PAIRING_TOKEN_DIR}\` to the directory holding ` +
+        'it — then ' +
+        'restart the dev server, because the token is inlined when Vite resolves its config and ' +
+        'kept in the prebundled module. Reloading the page serves that same token, whether the ' +
+        'dev server is on this machine or in a container.',
+    };
+  }
+
+  // A refused dial outranks the absence of a local config, for the same reason `previouslyConnected`
+  // does: it is positive evidence about the app, and `initialized` only ever answers "is there a
+  // `.reticle.json` in the ONE directory this daemon stands in". A globally-registered daemon stands
+  // in `/` or `$HOME`, so that answer is no for every project it serves -- and every page it turns
+  // away is proof that the project it turned away is wired.
+  if (!facts.initialized && true === facts.authRefused) {
+    return {
+      action: NoSessionAction.OPEN_APP,
+      ...(only === undefined ? {} : { port: only }),
+      reason:
+        `a page dialled this daemon and was refused on the pairing token, so the app IS running ` +
+        `and instrumented (${where}) — this is a SCOPE problem, not an install problem. ` +
+        'This daemon was started outside the project (an IDE that registers the MCP server ' +
+        'globally starts it in `/` or your home directory), so it has no `.reticle.json` to match ' +
+        'the page against. Do NOT run `reticle init`: the config it would write is already correct ' +
+        'somewhere else. Take a context you own instead with reticle_lease {action:"acquire", url, ' +
+        "projectId}, or restart the daemon from the app's own directory.",
+    };
+  }
+
   if (0 === facts.listening.length || departedPortIsGone) {
     const dev = facts.dev;
     // The start advice below follows a departed session whose port is gone. Name it, so the restart
@@ -360,55 +412,6 @@ export function nextActionFor(facts: NextActionFacts): NoSessionNextAction {
 
   // Something IS up. Whatever else is true, do NOT hand back a start command: a second dev server on
   // a second port is the exact confusion the probe exists to prevent.
-  const ports = facts.listening.join(', ');
-  const only = 1 === facts.listening.length ? facts.listening[0] : undefined;
-
-  // A refused dial outranks the absence of a local config, for the same reason `previouslyConnected`
-  // does: it is positive evidence about the app, and `initialized` only ever answers "is there a
-  // `.reticle.json` in the ONE directory this daemon stands in". A globally-registered daemon stands
-  // in `/` or `$HOME`, so that answer is no for every project it serves -- and every page it turns
-  // away is proof that the project it turned away is wired.
-  // A refusal against a project that IS initialised here. The daemon has the config, so this is not
-  // a scope problem — the page reached the right daemon and presented a credential it would not
-  // accept. The usual cause is a dev server that shares no filesystem with the daemon (Docker, a
-  // devcontainer, WSL): the build plugin reads-or-mints the pairing token from `$HOME/.reticle`,
-  // which over there is a different file, so it mints its own and every page is refused. The daemon
-  // holds every fact needed to say so, which is why the reason below says it rather than repeating
-  // `authentication failed`.
-  if (true === facts.initialized && true === facts.authRefused) {
-    return {
-      action: NoSessionAction.OPEN_APP,
-      ...(only === undefined ? {} : { port: only }),
-      reason:
-        `a page dialled this daemon and was refused on the pairing token (${ports} listening), so ` +
-        'the app IS running and instrumented and this project IS wired — the page simply presented ' +
-        'a token this daemon does not own. The usual cause is a dev server that does not share a ' +
-        'filesystem with the daemon (Docker, a devcontainer, WSL): the build plugin reads the token ' +
-        'from `$HOME/.reticle/pairing-token`, which over there is a different file, so it mints its ' +
-        "own. Point the plugin at the daemon's copy — mount `~/.reticle/pairing-token` into the " +
-        `container read-only and set \`${ReticleEnv.PAIRING_TOKEN_DIR}\` to the directory holding ` +
-        'it — then ' +
-        'restart the dev server, because the token is inlined when Vite resolves its config and ' +
-        'kept in the prebundled module. Reloading the page serves that same token, whether the ' +
-        'dev server is on this machine or in a container.',
-    };
-  }
-
-  if (!facts.initialized && true === facts.authRefused) {
-    return {
-      action: NoSessionAction.OPEN_APP,
-      ...(only === undefined ? {} : { port: only }),
-      reason:
-        `a page dialled this daemon and was refused on the pairing token, so the app IS running ` +
-        `and instrumented (${ports} listening) — this is a SCOPE problem, not an install problem. ` +
-        'This daemon was started outside the project (an IDE that registers the MCP server ' +
-        'globally starts it in `/` or your home directory), so it has no `.reticle.json` to match ' +
-        'the page against. Do NOT run `reticle init`: the config it would write is already correct ' +
-        'somewhere else. Take a context you own instead with reticle_lease {action:"acquire", url, ' +
-        "projectId}, or restart the daemon from the app's own directory.",
-    };
-  }
-
   if (!facts.initialized && true !== facts.previouslyConnected) {
     // The port the project's own dev script pins outranks a lone listener: the scan is machine-wide.
     const pinned = facts.dev?.port;
