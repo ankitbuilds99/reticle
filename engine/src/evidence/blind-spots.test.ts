@@ -65,6 +65,14 @@ describe('buildCoverageStatement', () => {
     expect(statement.note).not.toContain('ipcRenderer');
   });
 
+  it('gives a callable remedy for unwatched state', () => {
+    const statement = buildCoverageStatement([{ kind: BlindSpotKind.UNWATCHED_STATE, count: 1 }]);
+
+    expect(statement.note).toContain("import { registerStore } from '@reticlehq/browser'");
+    expect(statement.note).not.toContain('reticle.registerStore');
+    expect(statement.note).toContain('component-local React state');
+  });
+
   it('drops a one-way IPC send row on Tauri — that kind is Electron preload, not invoke', () => {
     const statement = buildCoverageStatement(
       spotsForRuntime([{ kind: BlindSpotKind.VERDICTLESS_SEND, count: 1 }], AppRuntime.TAURI),
