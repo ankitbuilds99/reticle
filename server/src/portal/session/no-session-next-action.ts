@@ -288,13 +288,21 @@ export function nextActionFor(facts: NextActionFacts): NoSessionNextAction {
   // It must outrank an empty port scan, which only says the app is outside this daemon's scan set.
   const ports = facts.listening.join(', ');
   const only = 1 === facts.listening.length ? facts.listening[0] : undefined;
+  const where = '' === ports ? 'on a port this daemon did not scan' : `${ports} listening`;
 
+  // A refusal against a project that IS initialised here. The daemon has the config, so this is not
+  // a scope problem — the page reached the right daemon and presented a credential it would not
+  // accept. The usual cause is a dev server that shares no filesystem with the daemon (Docker, a
+  // devcontainer, WSL): the build plugin reads-or-mints the pairing token from `$HOME/.reticle`,
+  // which over there is a different file, so it mints its own and every page is refused. The daemon
+  // holds every fact needed to say so, which is why the reason below says it rather than repeating
+  // `authentication failed`.
   if (true === facts.initialized && true === facts.authRefused) {
     return {
       action: NoSessionAction.OPEN_APP,
       ...(only === undefined ? {} : { port: only }),
       reason:
-        `a page dialled this daemon and was refused on the pairing token (${ports} listening), so ` +
+        `a page dialled this daemon and was refused on the pairing token (${where}), so ` +
         'the app IS running and instrumented and this project IS wired — the page simply presented ' +
         'a token this daemon does not own. The usual cause is a dev server that does not share a ' +
         'filesystem with the daemon (Docker, a devcontainer, WSL): the build plugin reads the token ' +
@@ -308,13 +316,18 @@ export function nextActionFor(facts: NextActionFacts): NoSessionNextAction {
     };
   }
 
+  // A refused dial outranks the absence of a local config, for the same reason `previouslyConnected`
+  // does: it is positive evidence about the app, and `initialized` only ever answers "is there a
+  // `.reticle.json` in the ONE directory this daemon stands in". A globally-registered daemon stands
+  // in `/` or `$HOME`, so that answer is no for every project it serves -- and every page it turns
+  // away is proof that the project it turned away is wired.
   if (!facts.initialized && true === facts.authRefused) {
     return {
       action: NoSessionAction.OPEN_APP,
       ...(only === undefined ? {} : { port: only }),
       reason:
         `a page dialled this daemon and was refused on the pairing token, so the app IS running ` +
-        `and instrumented (${ports} listening) — this is a SCOPE problem, not an install problem. ` +
+        `and instrumented (${where}) — this is a SCOPE problem, not an install problem. ` +
         'This daemon was started outside the project (an IDE that registers the MCP server ' +
         'globally starts it in `/` or your home directory), so it has no `.reticle.json` to match ' +
         'the page against. Do NOT run `reticle init`: the config it would write is already correct ' +

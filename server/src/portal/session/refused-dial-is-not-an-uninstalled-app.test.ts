@@ -203,7 +203,22 @@ describe('a refused dial remains authoritative when the project is wired but uns
     expect(next.command).toBeUndefined();
     expect(next.reason).toContain('refused on the pairing token');
     expect(next.reason).toContain('app IS running and instrumented');
+    expect(next.reason).toContain('on a port this daemon did not scan');
+    expect(next.reason).not.toContain('( listening)');
     expect(next.reason).not.toContain('run `pnpm run dev`');
+  });
+
+  it('says where the app is when an initialised project is refused with nothing scanned', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: true,
+      listening: [],
+      dev: undefined,
+      authRefused: true,
+    });
+
+    expect(next.reason).toContain('(on a port this daemon did not scan)');
+    expect(next.reason).not.toContain('( listening)');
   });
 });
 
