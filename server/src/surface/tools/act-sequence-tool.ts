@@ -441,7 +441,9 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
       const completed =
         DeviationMode.CONTINUE === onDeviation
           ? (stalledAt ?? inputSteps.length)
-          : (stoppedAt !== undefined ? stoppedAt + 1 : (stalledAt ?? inputSteps.length));
+          : stoppedAt !== undefined
+            ? stoppedAt + 1
+            : (stalledAt ?? inputSteps.length);
       if (completed > 0) {
         session.lastAct.markActed(since, undefined, undefined);
       }

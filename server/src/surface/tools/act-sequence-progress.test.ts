@@ -245,7 +245,12 @@ describe('act_sequence per-step progress', () => {
       onDeviation: 'continue',
       steps: [
         { ref: 'e1', action: 'fill', args: { value: 'a' } },
-        { ref: 'e2', action: 'fill', args: { value: 'b' }, expect: { kind: 'signal', name: 'never:fires' } },
+        {
+          ref: 'e2',
+          action: 'fill',
+          args: { value: 'b' },
+          expect: { kind: 'signal', name: 'never:fires' },
+        },
         { ref: 'e3', action: 'click' },
       ],
     })) as SequenceResult & { tail?: unknown[] };
