@@ -585,7 +585,7 @@ export async function runSequenceStep(
       // Keep the transport alive long enough for the sequence's default per-step budget, and give
       // an omitted timeout the same aggregate budget as the live tool's independent step waits.
       const perStepTimeout =
-        step.timeoutMs === undefined || step.timeoutMs === 0
+        undefined === step.timeoutMs || step.timeoutMs === 0
           ? DEFAULT_SEQUENCE_STEP_TIMEOUT_MS
           : step.timeoutMs;
       const timeoutMs = perStepTimeout * steps.length;
