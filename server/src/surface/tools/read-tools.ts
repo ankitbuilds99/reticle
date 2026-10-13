@@ -594,7 +594,22 @@ export const READ_TOOLS: ToolDef[] = [
       // Back-compat: an older browser returned the whole store; scope it here (may already be
       // size-truncated in transit for a very large store — that is the limitation this fix removes
       // for current SDKs).
-      const base = store !== undefined ? (root.stores ?? {})[store] : result;
+      const stores = root.stores;
+      const hasStore =
+        store !== undefined &&
+        'object' === typeof stores &&
+        stores !== null &&
+        Object.prototype.hasOwnProperty.call(stores, store);
+      if (store !== undefined && path === undefined && !hasStore) {
+        return {
+          store,
+          found: false,
+          value: null,
+          availableKeys: names,
+          storeNames: names,
+        };
+      }
+      const base = store !== undefined ? (stores ?? {})[store] : result;
       const selection = path !== undefined ? selectPath(base, path) : { found: true, value: base };
       const value =
         selection.found && depth !== undefined ? capDepth(selection.value, depth) : selection.value;
