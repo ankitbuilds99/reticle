@@ -75,7 +75,7 @@ const LABEL: Record<BlindSpotKind, (n: number) => string> = {
   // agent reading `stateDiffs: []` otherwise reads "the app changed no state", which is a claim
   // nothing here can support. Names the one-line fix, because the reader is the one who can apply it.
   [BlindSpotKind.UNWATCHED_STATE]: () =>
-    "no subscribable store is registered, so NO state change is observed — an empty stateDiffs here means unwatched, not unchanged (import { registerStore } from '@reticlehq/browser' and call registerStore(name, store) with a subscribable store; for component-local React state, use @reticlehq/react's useReticleStore(name, value) or inspect it with reticle_look { action: 'state', ref: '...' })",
+    "no subscribable store is registered, so NO state change is observed — an empty stateDiffs here means unwatched, not unchanged (import { registerStore } from '@reticlehq/browser' and call registerStore(name, store) with a subscribable store; for component-local React state, import { useReticleStore } from '@reticlehq/react/store' and call useReticleStore(name, value), or inspect it with reticle_look { action: 'state', ref: '...' })",
   [BlindSpotKind.WRAPPED_NETWORK]: () =>
     'fetch was already wrapped before Reticle, so recorded requests may differ from what was sent',
   // A fact about the app's wiring, not a tally. Says what a network view WITHOUT ipc:// records

@@ -56,6 +56,7 @@ describe('instrumentation gaps', () => {
     expect(fix).not.toContain('reticle.registerStore');
     expect(fix).toContain("reticle_look { action: 'state'");
     expect(fix).toContain('component-local React state');
+    expect(fix).toContain("import { useReticleStore } from '@reticlehq/react/store'");
   });
 
   /**
