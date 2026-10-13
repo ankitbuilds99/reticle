@@ -202,6 +202,9 @@ function main(argv, stdin) {
 const invoked =
   undefined !== process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (invoked) {
-  const stdin = readFileSync(0, 'utf8');
-  process.exitCode = main(process.argv.slice(2), stdin);
+  // stdin is read only when there are paths to route: `--dump-patterns` reads none, and reading it
+  // anyway blocked forever whenever the caller's stdin never closed (a turbo task's socket did).
+  const argv = process.argv.slice(2);
+  const stdin = argv.includes('--dump-patterns') ? '' : readFileSync(0, 'utf8');
+  process.exitCode = main(argv, stdin);
 }

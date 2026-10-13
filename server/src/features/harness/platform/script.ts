@@ -12,6 +12,7 @@
  * The platform keeps every plan under an id, and is told afterwards how each journey went: that is
  * what the next plan learns from (what failed is driven first).
  */
+import { readRefusal, refusalSentence } from './refusal.js';
 import { createHash } from 'node:crypto';
 import {
   ScriptStatus,
@@ -151,13 +152,8 @@ export async function proposeScript(
 }
 
 async function refusalOf(res: Response): Promise<string> {
-  try {
-    const message = ((await res.json()) as { error?: { message?: unknown } }).error?.message;
-    if ('string' === typeof message && 0 < message.length) return message;
-  } catch {
-    // not JSON: the status says enough
-  }
-  return `the platform answered ${String(res.status)}`;
+  // The code picks the lead sentence (refusal.ts), so what this says never rests on the wording.
+  return refusalSentence(readRefusal(await res.text().catch(() => '')), res.status);
 }
 
 /**

@@ -344,10 +344,27 @@ export async function assertStepExpect(
         : DriftReason.SIGNAL_NOT_OBSERVED,
     reason: namedInFlight
       ? `${IN_FLIGHT_AT_BUDGET_END} (${openRequests.join(', ')})`
-      : (verdict.failureReason ?? "the step's declared consequence did not hold"),
+      : withCaseOnly(
+          verdict.failureReason ?? "the step's declared consequence did not hold",
+          verdict,
+        ),
     anchor: expectLabel(expect),
     nearest: null,
   };
+}
+
+/**
+ * A text check that missed only on case says so, with what would hold. Text checks match case
+ * exactly now, so a flow saved when they did not goes red on capitalisation alone; the person
+ * reading its replay needs the fix (`ignoreCase: true`, or re-record), not a bare "did not hold".
+ */
+export function withCaseOnly(
+  reason: string,
+  verdict: { caseOnlyMiss?: boolean; wouldHold?: string },
+): string {
+  if (true !== verdict.caseOnlyMiss) return reason;
+  const shown = verdict.wouldHold === undefined ? '' : ` ("${verdict.wouldHold}")`;
+  return `${reason} — the page shows it in another case${shown}. Text checks match case exactly: if any case is meant, add ignoreCase: true to this check, or re-record the flow.`;
 }
 
 /** Run one signal-anchored step: wait for the signal predicate, else drift (no nearest for signals). */

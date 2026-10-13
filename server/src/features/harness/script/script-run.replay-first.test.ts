@@ -249,4 +249,45 @@ describe('the end-already-shown guard and replays', () => {
     expect(fake.navigated).toEqual(['/login']);
     expect(fake.goals).toEqual([GOAL]);
   });
+
+  /*
+   * Driven over MCP: the replay pressed Generate and the page showed the end the goal quotes, but
+   * the replay decided nothing (its flow checked no end), so the Harness re-drove from a start that
+   * signed the app out and failed a working app.
+   */
+  const quoting = DriveScriptSchema.parse({
+    version: 1,
+    source: 'platform',
+    journeys: [
+      {
+        id: 'j1',
+        title: 'Lee: saved',
+        steps: [{ kind: 'replay', flow: 'saved' }],
+        fallback: { goal: `Lee saves an item and sees "${END}".` },
+      },
+    ],
+    lanes: [{ id: 'A', journeys: ['j1'] }],
+  });
+
+  it('a replay that left the page on the end its goal quotes passes, with no model', async () => {
+    let page = false;
+    const fake = showing(
+      () => page,
+      { saved: ReplayStatus.UNVERIFIABLE },
+      (name) => {
+        if (ReticleTool.FLOW_REPLAY === name) page = true;
+      },
+    );
+    const run = await runScript(quoting, fake.port);
+    expect(fake.goals).toEqual([]);
+    expect(fake.navigated).toEqual([]);
+    expect(run.view.lanes[0]?.journeys[0]?.status).toBe(ScriptStatus.PASSED);
+  });
+
+  it('is never credited with an end the page showed before the journey ran', async () => {
+    const fake = showing(() => true, { saved: ReplayStatus.UNVERIFIABLE });
+    const run = await runScript(quoting, fake.port);
+    // Not passed on the replay's account: the fallback's own guard leaves it undecided.
+    expect(run.view.lanes[0]?.journeys[0]?.status).toBe(ScriptStatus.UNDECIDED);
+  });
 });

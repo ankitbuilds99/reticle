@@ -213,6 +213,9 @@ function readState(
   // resolve — capping first would truncate the store before selection ever reached the row.
   if (path !== undefined || depth !== undefined) {
     const rawStores = readStoresRaw(store);
+    if (store !== undefined && !Object.hasOwn(rawStores, store)) {
+      return { store, path, found: false, value: null, storeNames: names };
+    }
     const base = store !== undefined ? rawStores[store] : { stores: rawStores, storeNames: names };
     const selection = path !== undefined ? selectPath(base, path) : { found: true, value: base };
     const selected =

@@ -16,7 +16,6 @@ import {
   ReticleDir,
   ReticleTool,
   RunFlowStatus,
-  ScriptStatus,
   Verified,
   VerdictStatus,
   apiKeyFrom,
@@ -25,7 +24,7 @@ import {
   type SuiteVerdict,
 } from '@reticlehq/core';
 import { JourneyBy } from '@reticlehq/core/artifacts';
-import { verdictLine } from '@/features/harness/drive-report.js';
+import { runVerdict } from '@/features/harness/drive-report.js';
 import { mapReplayToFlowResult } from '@/judgement/runs/artifact/replay-mapping.js';
 import { gapSummary } from '@/judgement/runs/artifact/gap-summary.js';
 import { driveRunFrom, driveRunId, endAgentSession } from '@/judgement/runs/drive-run.js';
@@ -361,12 +360,7 @@ export function exploreResult(root: string, drive: DriveFacts): string {
   });
   // A plan's verdict is its journeys' (the same line the run ends on), never a count beside it.
   if (0 < journeys.length) {
-    const line = verdictLine(drive.checks, drive.goalMet, journeys);
-    const word = line.startsWith(PROVED_LINE)
-      ? Verified.YES
-      : journeys.some((j) => ScriptStatus.FAILED === j.status)
-        ? Verified.NO
-        : Verified.UNKNOWN;
+    const { verified: word, line } = runVerdict(drive.checks, drive.goalMet, journeys);
     return WORD_FOR[word] === headWord(block)
       ? block
       : retitleResult(block, word, (line.split(' — ')[1] ?? line).replace(/\.$/, ''));
@@ -375,8 +369,6 @@ export function exploreResult(root: string, drive: DriveFacts): string {
     ? retitleResult(block, Verified.UNKNOWN, MSG_GOAL_NOT_REACHED)
     : block;
 }
-
-const PROVED_LINE = 'PROVED';
 
 /** The verdict word a block's headline carries. */
 function headWord(block: string): string | undefined {
@@ -443,11 +435,8 @@ export function claimAgainstGrade(
   actions: readonly JournalAction[],
 ): { claimed: VerdictStatus; graded: VerdictStatus; agrees: boolean } {
   const run = driveRunFrom(actions, { runId: 'claim' });
-  const status = run === undefined ? VerdictStatus.UNKNOWN : computeVerdict(run).status;
-  // A failed check is a failed session, as its block's headline and the dashboard say: "partial"
-  // beside "Reticle result: failed" was one answer with two verdicts.
-  const failed = true === run?.checks.some((check) => Verified.NO === check.status);
-  const graded = VerdictStatus.PARTIAL === status && failed ? VerdictStatus.FAIL : status;
+  // computeVerdict decides it, once: a failed check beside a passed one is a fail there too.
+  const graded = run === undefined ? VerdictStatus.UNKNOWN : computeVerdict(run).status;
   return { claimed: claim, graded, agrees: claim === graded };
 }
 

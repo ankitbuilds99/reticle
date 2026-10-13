@@ -549,9 +549,7 @@ export const RAW_TOOLS: ToolDef[] = withCompactEnvelope([
   // reachable through reticle_run. See affected-tools.ts.
   ...AFFECTED_TOOLS,
   // reticle_coverage — which controls were driven vs never touched. Unadvertised; via reticle_run.
-  // The table is passed as a thunk so the coverage tool can report which of it was called without
-  // importing it back — see buildCoverageTools. Called from the handler, long after TOOLS exists.
-  ...buildCoverageTools(() => TOOLS.map((t) => t.name)),
+  ...buildCoverageTools(),
   // reticle_verify_change — "did my change break anything" in one call. See verify-change-tools.ts.
   ...VERIFY_CHANGE_TOOLS,
   // Live-control: reticle_end_session / reticle_resume / reticle_messages. See live-control-tools.ts.

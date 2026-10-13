@@ -1,4 +1,4 @@
-import { invokedFlowMissing } from '@reticlehq/core';
+import { invokedFlowMissing, ScriptStatus } from '@reticlehq/core';
 import { describe, expect, it } from 'vitest';
 import {
   checkTally,
@@ -757,5 +757,45 @@ describe('one answer, one count', () => {
     expect(summary).toContain('1 of 1 check(s) held, 0 failed, 0 undecided');
     expect(summary).not.toMatch(/\d+ action\(s\) were NOT PROVED/);
     expect(summary).toContain('2 action(s) declared no consequence');
+  });
+});
+
+// Driven over MCP: the model asserted the text Generate produces before its POST answered; the same
+// assert held a second later, and the early `no` failed a journey whose goal was met.
+describe('a passive assert that read too early', () => {
+  const asserted = (verified: string) =>
+    call('reticle_assert', { predicate: { kind: 'text', contains: 'Done' } }, { verified });
+
+  it('is not a failed check when the same claim holds later in the drive', () => {
+    expect(checkTally([asserted('no'), asserted('yes')])).toEqual({
+      held: 1,
+      failed: 0,
+      undecided: 0,
+    });
+  });
+
+  it('still fails when nothing later holds it, or when it failed after holding', () => {
+    expect(checkTally([asserted('no')]).failed).toBe(1);
+    expect(checkTally([asserted('yes'), asserted('no')]).failed).toBe(1);
+  });
+});
+
+// Review of the release: "any passed → proved" read PROVED for a plan whose other journeys a credit
+// cut-off had blocked, and the result block was retitled "proved" to match.
+describe('a plan is proved only when no journey was left undecided', () => {
+  const held = { held: 2, failed: 0, undecided: 0 };
+  const plan = (...statuses: string[]) => statuses.map((status) => ({ status }));
+
+  it('is not proved with a journey blocked or undecided beside one that passed', () => {
+    expect(runProved(held, true, plan(ScriptStatus.PASSED, ScriptStatus.BLOCKED))).toBe(false);
+    expect(runProved(held, true, plan(ScriptStatus.PASSED, ScriptStatus.UNDECIDED))).toBe(false);
+    expect(verdictLine(held, true, plan(ScriptStatus.PASSED, ScriptStatus.BLOCKED))).toContain(
+      '1 of 2 journey(s) passed and the rest were not decided',
+    );
+  });
+
+  it('is proved when every journey passed, or a side road was deliberately not taken', () => {
+    expect(runProved(held, true, plan(ScriptStatus.PASSED, ScriptStatus.PASSED))).toBe(true);
+    expect(runProved(held, true, plan(ScriptStatus.PASSED, ScriptStatus.NOT_TAKEN))).toBe(true);
   });
 });

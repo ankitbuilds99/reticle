@@ -144,13 +144,13 @@ Never echo the key back in your reply, and never put it in a commit, a comment, 
 Reticle is built for agents. You are its user, and your experience is the only signal that decides what gets built or fixed, and it disappears when your context does. The moment Reticle breaks, lies, cannot see something you needed, costs too many calls, or gives you trouble during setup:
 
 ```
-reticle_session { action: "feedback" } { kind, text }
+reticle_session { action: "feedback", kind, text }
 ```
 
-`kind` is one of `bug`, `gap`, `ambiguity`, `feature_request`, `improvement`. One call, then carry on. If the tools are unreachable, file the same report from the shell:
+`kind` is one of `bug`, `gap`, `ambiguity`, `feature_request`, `improvement`, `experience`. One call, then carry on. If the tools are unreachable, file the same report from the shell:
 
 ```bash
-npx @reticlehq/server feedback --agent --kind <bug|gap|ambiguity|feature_request|improvement> "what happened"
+npx @reticlehq/server feedback --agent --kind <bug|gap|ambiguity|feature_request|improvement|experience> "what happened"
 ```
 
 Nothing is too minor. Report defects in **Reticle**; a bug you find in the app under test is Reticle working, and belongs in your answer to the user. Never put app source, secrets, or user data in a report.

@@ -356,3 +356,18 @@ describe('the goals a drive is graded on', () => {
     ).toEqual([{ text: 'payments', absent: true }, { text: 'Passed' }]);
   });
 });
+
+// Driven over MCP: the drive ended on "Generating…" with the POST that writes the end still open.
+// A settle whose window starts at this call cannot see a request opened before it, so the page
+// read as settled and the end was looked for a second too early.
+describe('looking for an end settles over the whole session', () => {
+  it('waits from the session start, so a request opened before the look still counts', async () => {
+    const waits: Record<string, unknown>[] = [];
+    const invoke = (name: string, args: Record<string, unknown>): Promise<unknown> => {
+      if (ReticleTool.WAIT_FOR === name) waits.push(args);
+      return Promise.resolve({ tree: '- text "Done"', found: true });
+    };
+    await lookFor(invoke, 'Done');
+    expect(waits[0]?.['since']).toBe(0);
+  });
+});

@@ -20,8 +20,9 @@ export interface Signature {
 
 export const KEYCHAIN_NOTE =
   "macOS ties keychain items to the app's signature; this build is signed differently, so the " +
-  "app's keychain reads will ask for your password. Sign this build with your release identity " +
-  '(APPLE_SIGNING_IDENTITY / signingIdentity) or use a separate keychain service in dev.';
+  "app's keychain reads will ask for your password. Set your release identity " +
+  '(APPLE_SIGNING_IDENTITY, or signingIdentity in tauri.conf.json) and `reticle setup` signs the ' +
+  'dev build it starts with it; or use a separate keychain service in dev.';
 
 const NOT_SIGNED = 'code object is not signed at all';
 const NO_TEAM = 'not set';

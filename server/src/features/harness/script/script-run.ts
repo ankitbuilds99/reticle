@@ -30,7 +30,7 @@ import {
   type ScriptStep,
 } from '@reticlehq/core/artifacts';
 import { ReplayOutcome, checkTally, replayedFlows } from '../drive-report.js';
-import { lookFor, parseGoals } from '../goals.js';
+import { endOf, lookFor } from '../goals.js';
 import {
   DEFAULT_MAX_STEPS,
   StopReason,
@@ -319,6 +319,11 @@ export async function runScript(
         const stop = (): void => {
           stopped = true;
         };
+        // The end the fallback goal names, and whether the page showed it before anything ran: a
+        // replay can only be credited with an end it put there.
+        const end = journey.fallback === undefined ? undefined : endOf(journey.fallback.goal);
+        const endBefore =
+          end !== undefined && (await lookFor(raw.invoke.bind(raw), end, ports.own));
         let ran = await runJourney(journey, card.steps, tools, ports, own, tell, stop);
         // Replay first: replays that decided nothing hand the journey's goal to the model. One that
         // failed is a regression, and a regression is reported, never re-driven into a pass.
@@ -330,8 +335,19 @@ export async function runScript(
           !ports.stopped() &&
           replaysDecidedNothing(mine)
         ) {
-          refused = await ports.fallbackRefused?.();
-          if (refused === undefined) {
+          // Replays that decided nothing can still have driven the journey to its end. Driven
+          // over MCP: the replay pressed Generate and the page showed the goal's end text; the
+          // Harness threw that away, re-drove from a start that signed the app out, and failed a
+          // working app. The end is judged where the replay left it, by an assert kept as the
+          // run's check — and never when the page showed it before the journey ran.
+          const replayReachedEnd =
+            end !== undefined &&
+            !endBefore &&
+            (await lookFor(raw.invoke.bind(raw), end, ports.own)) &&
+            (await holds(tools, { kind: PredicateKind.TEXT, contains: end }));
+          if (replayReachedEnd) ran = { ok: true };
+          else refused = await ports.fallbackRefused?.();
+          if (!replayReachedEnd && refused === undefined) {
             if (start !== undefined) await call(raw, ReticleTool.NAVIGATE, { url: start });
             ran = await runFallback(journey.fallback.goal, tools, ports, own, stop);
           }
@@ -569,44 +585,50 @@ async function runLeaf(
       if (step.goal !== undefined) {
         const budget = step.maxSteps ?? OPEN_GOAL_STEPS;
         // Parsed before the drive: an end the page already shows is already true, never proved.
-        const ending = parseGoals(step.goal)
-          .filter((g) => true !== g.absent)
-          .at(-1)?.text;
+        const ending = endOf(step.goal);
         if (ending !== undefined && (await lookFor(tools.invoke.bind(tools), ending, ports.own)))
           throw new EndAlreadyShown(msgEndAlreadyShown(ending));
         let drive = await ports.drive(tools, step.goal, budget);
         drives.push(drive);
         if (StopReason.STOPPED === drive.stopReason) stop();
-        // Passed means its checks held, not that it ran one: a refund journey whose two checks both
-        // failed was marked passed because a check had run.
-        if (0 < checkTally(drive.toolCalls).failed) return false;
         // A goal that quotes where it ends is judged there, by an assert kept as the run's check:
         // the model clicked a counter with no `until` and the journey failed on a counter that worked.
         // ponytail: the LAST quote the goal does not negate is the end state ("from "count: 0" to
         // "count: 1""); a goal that quotes its end first needs the planner to say which is the end.
         const end = ending;
         if (end === undefined) {
+          // Passed means its checks held, not that it ran one: a refund journey whose two checks
+          // both failed was marked passed because a check had run.
+          if (0 < checkTally(drive.toolCalls).failed) return false;
           if (0 < checkTally(drive.toolCalls).held) return false !== drive.goalMet;
           // Reached, by its own word, with nothing checked: not proved, and not a failure either.
           if (true === drive.goalMet) throw new Undecided(MSG_GOAL_WITHOUT_CHECK);
           return false;
         }
+        // The drive's failures are judged after its end is: the model's own early look at the end
+        // ("Generated script for", asserted before the request that writes it had answered) is
+        // superseded when the end then holds, by the same rule as the run's verdict.
+        const failedBeside = (calls: readonly ToolOutcome[], endHeld: boolean): boolean =>
+          0 < checkTally(endHeld ? [...calls, endHeldCall(end)] : calls).failed;
         let shown = await lookFor(tools.invoke.bind(tools), end, ports.own);
         // A drive that finished with turns to spare, short of the end its own plan names (joined,
         // opened Runs, never clicked Team), is sent on once from where it stands, not graded there.
         const left = budget - drive.steps;
         if (!shown && StopReason.FINISHED === drive.stopReason && MIN_CONTINUE_STEPS <= left) {
+          if (failedBeside(drive.toolCalls, false)) return false;
           drive = await ports.drive(tools, continueGoal(step.goal, end), left);
           drives.push(drive);
           if (StopReason.STOPPED === drive.stopReason) stop();
-          if (0 < checkTally(drive.toolCalls).failed) return false;
           shown = await lookFor(tools.invoke.bind(tools), end, ports.own);
         }
         // Never reached is the journey's miss, not a failed check on the app: no assert is kept. The
         // page decides it, not the driver's word: an end the page shows was reached, whatever the
         // driver said (a drive started on a dead link reached it and was failed on its own "no").
         if (!shown) return false;
-        return holds(tools, { kind: PredicateKind.TEXT, contains: end });
+        const endHeld = await holds(tools, { kind: PredicateKind.TEXT, contains: end });
+
+        // Passed means its checks held, not that it ran one.
+        return endHeld && !failedBeside(drive.toolCalls, true);
       }
       const result = await call(tools, ReticleTool.ACT_AND_WAIT, {
         ...(step.target === undefined ? {} : { target: step.target }),
@@ -635,6 +657,17 @@ async function replay(tools: HarnessToolset, args: Record<string, unknown>): Pro
 
 async function holds(tools: HarnessToolset, predicate: unknown): Promise<boolean> {
   return true === asRecord(await call(tools, ReticleTool.ASSERT, { predicate }))['pass'];
+}
+
+/** The end check `holds` keeps, as a call the drive's tally can read beside the model's own. */
+function endHeldCall(end: string): ToolOutcome {
+  return {
+    id: 'end',
+    name: ReticleTool.ASSERT,
+    args: { predicate: { kind: PredicateKind.TEXT, contains: end } },
+    result: { verified: Verified.YES },
+    isError: false,
+  };
 }
 
 /** A tool that throws is a failed step, not a crashed run. */

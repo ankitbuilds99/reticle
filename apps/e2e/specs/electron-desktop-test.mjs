@@ -118,7 +118,7 @@ try {
   // `unknown` passed all 18 checks here. Both directions are pinned now, because either one alone is
   // satisfiable by a broken rule: a rule that always says `no` catches the false green and cries wolf
   // on everything else; a rule that always says `yes` is silent and green.
-  // The app writes "archived" in lower case. Text checks match case exactly since 3.7.0, so this
+  // The app writes "archived" in lower case. Text checks match case exactly, so this
   // names the words the screen shows; the point is the verdict refusing them, not the spelling.
   const falseGreen = await tool('reticle_assert', {
     predicate: { kind: 'text', contains: 'archived' },

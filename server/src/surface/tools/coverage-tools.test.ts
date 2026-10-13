@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseControls } from './coverage-tools.js';
+import { buildCoverageTools, parseControls } from './coverage-tools.js';
 
 const TREE = [
   '- main',
@@ -40,5 +40,22 @@ describe('parseControls — the denominator for coverage', () => {
 
   it('returns nothing for a tree with no refs', () => {
     expect(parseControls('- main\n  - paragraph')).toEqual([]);
+  });
+});
+
+/**
+ * Two internal instruments used to ride on this answer: whether `reticle_context`/`reticle_intent`
+ * were used, and which tools the session called. Neither was the agent's business, both cost tokens
+ * on every call, and the call counts reset on a page reload, so the answer listed a tool as never
+ * called after the agent had called it several times. The answer is the agent's, so it carries
+ * only what tells the agent whether it is done.
+ */
+describe('reticle_coverage answers the agent, not the maintainers', () => {
+  it('declares no internal usage instrument in its output', () => {
+    const [tool] = buildCoverageTools();
+    const keys = Object.keys(tool?.outputSchema ?? {});
+    expect(keys).toContain('untouched');
+    expect(keys).not.toContain('featureUse');
+    expect(keys).not.toContain('toolHitRate');
   });
 });

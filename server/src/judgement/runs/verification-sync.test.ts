@@ -107,8 +107,8 @@ describe('persistAndSyncVerificationRun — MCP verification → Runs-tab artifa
     };
     expect(body.runId).toBe(runId);
     expect(body.flows).toHaveLength(2);
-    // a drift flow collapses to a fail; one pass + one fail = a mixed 'partial' verdict (never a false green).
-    expect(body.verdict.status).toBe('partial');
+    // a drift flow collapses to a fail; one pass + one fail = a 'fail' verdict (never a false green).
+    expect(body.verdict.status).toBe('fail');
   });
 
   it('never throws on a cloud failure and returns the runId (verdict unaffected)', async () => {

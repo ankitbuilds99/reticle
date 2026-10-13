@@ -8,12 +8,11 @@ import { RAW_TOOLS, TOOLS, MERGED_TOOLS } from './tools.js';
 const SERVER_SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * A tool's BEHAVIOUR is declared in eleven separate name sets, and forgetting one is silent.
+ * A tool's BEHAVIOUR is declared in ten separate name sets, and forgetting one is silent.
  *
- * CLAUDE.md rule 10 says "three allowlists". There are eleven, and the two that matter most fail
+ * CLAUDE.md rule 10 says "three allowlists". There are ten, and the one that matters most fails
  * without a sound: a tool missing from `VERDICT_TOOLS` emits no `verification_completed` and stops
- * counting toward the product's headline metric, and one missing from `CAPTURED_TOOLS` never gets
- * an honesty block computed. Nothing throws. No test reddens. The data is simply gone — which is
+ * counting toward the product's headline metric. Nothing throws. No test reddens. The data is simply gone — which is
  * the exact failure mode rule 10 exists to prevent and, until this file, did not.
  *
  * Two directions are checked here, and they catch different mistakes:
@@ -26,7 +25,7 @@ const SERVER_SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
  *
  *   2. Every tool is a DELIBERATE member or non-member of the four behavioural sets. This is the
  *      omission failure. It is enforced by a pin: the roster below lists every tool, so a new one
- *      cannot land without a human editing this file, and the failure message says which eleven
+ *      cannot land without a human editing this file, and the failure message says which ten
  *      sets to review. A pin is blunt, but the alternative — inferring which tools "should" produce
  *      a verdict — is a guess, and a guess is what put us here.
  *
@@ -44,7 +43,6 @@ const ALLOWLISTS: ReadonlyArray<{ readonly name: string; readonly file: string }
   { name: 'SESSION_BOUND_TOOLS', file: 'tools/invoke-tool.ts' },
   { name: 'SESSION_EXEMPT_TOOLS', file: 'tools/invoke-tool.ts' },
   { name: 'VERDICT_TOOLS', file: 'tools/feedback-tools.ts' },
-  { name: 'CAPTURED_TOOLS', file: 'tools/feature-capture.ts' },
   { name: 'CORE_TOOL_NAMES', file: 'tools/tool-surface.ts' },
   { name: 'EXTENDED_TOOL_NAMES', file: 'tools/tool-surface.ts' },
   { name: 'VERIFY_TOOL_NAMES', file: 'tools/tool-surface.ts' },
@@ -74,7 +72,7 @@ const membersOf = (setName: string, file: string): string[] => {
  * Every tool that exists, pinned.
  *
  * Adding a tool means adding it here, and that edit is the prompt to decide its behaviour in the
- * eleven sets above. Removing one means deleting its line. Neither is busywork: both are the moment
+ * ten sets above. Removing one means deleting its line. Neither is busywork: both are the moment
  * the decision actually gets made.
  */
 const KNOWN_TOOLS: ReadonlySet<string> = new Set(Object.values(ReticleTool));
@@ -142,7 +140,7 @@ describe('tool allowlists are complete', () => {
    * file exists to catch, so it is worth naming: a guard whose assertion cannot fail is worse than
    * no guard, because it occupies the space where a real one would go.
    */
-  it('holds the tool count, so a new tool forces a review of the eleven allowlists', () => {
+  it('holds the tool count, so a new tool forces a review of the ten allowlists', () => {
     /*
      * 63 since `reticle_verify { action: "explore" }` — the model-driven drive.
      *
@@ -158,8 +156,6 @@ describe('tool allowlists are complete', () => {
      *                        THE APP: it grades a flow. Counting a mutation outcome toward
      *                        `verification_completed` would inflate the headline metric with
      *                        judgements about our own suite.
-     *   CAPTURED_TOOLS       no  — the honesty block describes the capture a verdict rests on, and
-     *                        there is no verdict here to qualify.
      *   SESSION_BOUND/EXEMPT neither — it is a MEMBER of the merged `reticle_verify` facade, and the
      *                        facade is what `runTool` sees. Its siblings (`flows`, `crawl`) are in
      *                        neither set for the same reason.
@@ -167,7 +163,7 @@ describe('tool allowlists are complete', () => {
      *
      * Its membership was decided against `reticle_crawl`, the sibling it behaves exactly like: both
      * are destructive actions on the whole app reached as an action on `reticle_verify`, and both
-     * belong to NONE of the eleven sets. The parent carries what matters — `VERIFY` is already in
+     * belong to NONE of the ten sets. The parent carries what matters — `VERIFY` is already in
      * SESSION_BOUND_TOOLS (a drive with no live session is nothing) and in VERDICT_TOOLS, where
      * `verificationOf` still requires a verdict shape this action does not return. It saves flows;
      * the replay of those flows is what produces a verdict, and that is counted where it happens.
@@ -184,9 +180,8 @@ describe('tool allowlists are complete', () => {
     expect(
       RAW_TOOLS.length,
       "The number of tools changed. Before updating this number, decide this tool's membership in " +
-        'each of the eleven sets listed above — the two that fail SILENTLY are VERDICT_TOOLS (the ' +
-        'tool then emits no `verification_completed` and stops counting toward the headline metric) ' +
-        'and CAPTURED_TOOLS (no honesty block is ever computed for it).',
+        'each of the ten sets listed above — the one that fails SILENTLY is VERDICT_TOOLS (the ' +
+        'tool then emits no `verification_completed` and stops counting toward the headline metric).',
     ).toBe(PINNED_RAW_TOOL_COUNT);
   });
 });

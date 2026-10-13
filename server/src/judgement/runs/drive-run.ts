@@ -23,6 +23,7 @@
  * check as neither a pass nor a failure -- which is what those words already meant everywhere else.
  */
 
+import { supersededChecks } from '@reticlehq/engine/evidence/superseded-checks.js';
 import type { JournalVerdictEffect } from '@reticlehq/core/artifacts';
 import { isValidRunId } from '@/memory/project/dir/reticle-dir.js';
 import { defaultRunId } from './runner-port.js';
@@ -462,8 +463,17 @@ function harnessRunFrom(
       ? { ...check, status: Verified.UNKNOWN, reason: VerifiedReason.INCONCLUSIVE }
       : check;
   });
+  // A passive check that read too early is not counted: the one rule (superseded-checks.ts).
+  const superseded = supersededChecks(
+    input.checks.map((c) => ({
+      key: c.predicate,
+      passive: false === c.declaredBeforeActing,
+      held: Verified.YES === c.status,
+      failed: Verified.NO === c.status,
+    })),
+  );
   const count = (verified: string): number =>
-    checks.filter((check) => verified === check.status).length;
+    checks.filter((check, at) => verified === check.status && !superseded.has(at)).length;
   const status = driveFlowStatus({
     held: count(Verified.YES),
     failed: count(Verified.NO),

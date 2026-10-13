@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { timeoutMsSchema } from './args/numeric-bounds.js';
 import { compileSequenceStep, pathOf } from '@/language/flows/replay.js';
+import { DEFAULT_SEQUENCE_STEP_TIMEOUT_MS } from '@/language/flows/flow-step-runners.js';
 import { sequenceStepArgs } from './act/act-preflight.js';
 import {
   REPLAY_PROGRAM_VERSION,
@@ -192,6 +193,8 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
     since: z.number(),
     dispatched: z.boolean(),
     completed: z.number(),
+    /** Number of steps included in the saved recording, when a recording was created. */
+    recorded: z.number(),
     stalled_at: z.number().optional(),
     /** Index of the step whose declared consequence did not hold, when one did not. */
     stopped_at: z.number().optional(),
@@ -232,7 +235,10 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
     try {
       const inputSteps = Array.isArray(args['steps']) ? args['steps'] : [];
       assertSequenceSteps(inputSteps);
-      const perStepTimeout = 'number' === typeof args['timeout_ms'] ? args['timeout_ms'] : 8000;
+      const perStepTimeout =
+        'number' === typeof args['timeout_ms']
+          ? args['timeout_ms']
+          : DEFAULT_SEQUENCE_STEP_TIMEOUT_MS;
       const stepResults: Record<string, unknown>[] = [];
       // Every step leaves a picture of the page as its outcome was decided — see step-shots.ts.
       const pushStep = async (row: Record<string, unknown>): Promise<void> => {
@@ -340,10 +346,14 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
            * cannot be read. Sharing the builder is what makes that true by construction rather than
            * by two implementations agreeing today.
            */
-          const described = {
+          const describe = () => ({
             ...describeStepResult(step, asRecord(outcome.result)),
             ...effectOf(session, stepSince),
-          };
+          });
+          const deciding = (step: ReturnType<typeof describe>) =>
+            (step.contradictions ?? [])
+              .map((c) => c.kind)
+              .filter((kind) => !isAdvisory(kind) && !isAbsenceDerived(kind));
           /*
            * Evaluate what the step SAID it would cause, in the window this step opened.
            *
@@ -352,15 +362,22 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
            * satisfy step four's assertion, which is a false green built out of correct parts.
            */
           const parsed = PredicateSchema.safeParse(step['expect']);
-          const contradicted = (described.contradictions ?? [])
-            .map((c) => c.kind)
-            .filter((kind) => !isAdvisory(kind) && !isAbsenceDerived(kind));
-          const disagreement = 0 === contradicted.length ? {} : { contradicted };
           if (!parsed.success) {
-            expectations.push({ declared: false, ...disagreement });
+            const described = describe();
+            const contradicted = deciding(described);
+            expectations.push({
+              declared: false,
+              ...(0 === contradicted.length ? {} : { contradicted }),
+            });
             await pushStep(described);
           } else {
             const verdict = await waitForPredicate(session, parsed.data, perStepTimeout, stepSince);
+            // Described over the window the verdict was taken in, not the dispatch window before it:
+            // a step that waited 1.5s for its declared 200 reported that request "still in flight"
+            // beside `held: true`, a contradiction about a moment the verdict was not taken at.
+            const described = describe();
+            const contradicted = deciding(described);
+            const disagreement = 0 === contradicted.length ? {} : { contradicted };
             const held = true === verdict.pass;
             // A tab that went away (an external checkout page) or a predicate that could not be
             // read decided nothing: unknown, never a miss blamed on the app.
@@ -436,17 +453,22 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
        * The halted step counts: it WAS dispatched, and only the consequence it declared failed
        * afterwards. A stalled step never ran, which is why that index stays exclusive.
        */
-      const completed = stoppedAt !== undefined ? stoppedAt + 1 : (stalledAt ?? inputSteps.length);
+      const completed =
+        DeviationMode.CONTINUE === onDeviation
+          ? (stalledAt ?? inputSteps.length)
+          : stoppedAt !== undefined
+            ? stoppedAt + 1
+            : (stalledAt ?? inputSteps.length);
       if (completed > 0) {
         session.lastAct.markActed(since, undefined, undefined);
       }
       // Same as captureAct: no `active()` gate, so a sequence driven with nothing open still lands
-      // in the ambient tape. A stalled plan is still excluded — those steps never ran.
+      // in the ambient tape. A stalled plan keeps only the prefix whose steps actually ran.
       let journey: RecordedStep | undefined;
-      if (stalledAt === undefined) {
+      if (completed > 0) {
         // A sub-step keeps its `expect` only if it held — same rule as act_and_wait, so a flow
         // never replays an expectation that was never once observed to hold.
-        const proved = inputSteps.map((raw, i) => {
+        const proved = inputSteps.slice(0, completed).map((raw, i) => {
           const step = asRecord(raw);
           const { expect: _expect, ...rest } = step;
           return true === expectations[i]?.held ? step : rest;
@@ -454,8 +476,8 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
         const recorded = compileSequenceStep(
           { ...args, steps: proved },
           {
-            count: inputSteps.length,
-            steps: stepResults,
+            count: completed,
+            steps: stepResults.slice(0, completed),
           },
         );
         journey = recorded;
@@ -488,12 +510,16 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
           ...(pageBefore === undefined ? {} : { startPath: pageBefore }),
         });
       }
-      const ran = stoppedAt ?? stalledAt ?? inputSteps.length;
-      const tail = inputSteps.slice(ran + (stoppedAt === undefined ? 0 : 1));
+      const tailStart =
+        DeviationMode.HALT === onDeviation && stoppedAt !== undefined
+          ? stoppedAt + 1
+          : (stalledAt ?? inputSteps.length);
+      const tail = inputSteps.slice(tailStart);
       return withControl(session, {
         since,
         dispatched: completed > 0,
         completed,
+        recorded: journey === undefined ? 0 : completed,
         ...(stalledAt !== undefined ? { stalled_at: stalledAt } : {}),
         ...(stoppedAt !== undefined ? { stopped_at: stoppedAt } : {}),
         verified: grade.verified,

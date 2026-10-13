@@ -779,7 +779,7 @@ The open-source tool never needs the dashboard. The dashboard is where a team se
 ## License
 
 - **The SDK, adapters, core and engine are Apache-2.0.** Ship them inside your own apps.
-- **The server, CLI and `init` are FSL-1.1-ALv2:** free for any use except offering Reticle itself as a competing product or service, and each version becomes Apache-2.0 two years after release.
+- **The server, CLI, `init` and the spec runner (`@reticlehq/test`) are FSL-1.1-ALv2:** free for any use except offering Reticle itself as a competing product or service, and each version becomes Apache-2.0 two years after release.
 - **Enterprise features need a license key** in production; they are free for development and evaluation.
 
 [LICENSE](LICENSE) has the details.

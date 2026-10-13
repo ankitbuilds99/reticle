@@ -48,8 +48,13 @@ export function editDistance(a: string, b: string): number {
 
 /**
  * The closest present testid to a missing one, by case-insensitive edit distance, ties broken
- * by shortest length then lexically. Returns null only when nothing is present — so a drift
- * record always names a fix when one exists ("whose fault is it": here is the closest survivor).
+ * by shortest length then lexically — when it is close enough to be a rename. Null when nothing
+ * present is, so a drift record names a fix only when one plausibly exists.
+ *
+ * It used to name the closest survivor however far away it was. A replay that started signed out
+ * missed `compose-prompt` on the login screen and advised rebinding it to `login-submit`: eleven
+ * edits away, a different control on a different page, offered as the fix. Half the longer name is
+ * the ceiling — `chat-send` → `chat-submit` and `checkout-btn` → `checkout-button` stay in.
  */
 export function nearestTestid(missing: string, present: string[]): string | null {
   let best: string | null = null;
@@ -68,7 +73,8 @@ export function nearestTestid(missing: string, present: string[]): string | null
       bestDistance = distance;
     }
   }
-  return best;
+  if (null === best) return null;
+  return bestDistance <= Math.max(missing.length, best.length) / 2 ? best : null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Verified, VerifiedReason, ContradictionKind } from '@reticlehq/core';
+import { ChannelId, Verified, VerifiedReason, ContradictionKind } from '@reticlehq/core';
 import { decideVerified } from './verified.js';
 
 type VerifiedVerdictInput = Parameters<typeof decideVerified>[0];
@@ -602,6 +602,29 @@ describe('an in-flight named request is not a failed assertion', () => {
   it('does not say the declared consequence did not hold', () => {
     expect(decideVerified(inFlightMiss).because).not.toMatch(/declared consequence did not hold/);
     expect(decideVerified(inFlightMiss).because).toMatch(/in flight/i);
+  });
+
+  // Driven over MCP: the Harness asserted the text Generate produces while its POST was still open,
+  // got `no`, and the journey failed; the same assert held a second later.
+  it('grades unknown when a page claim misses while a write is still open', () => {
+    const pageClaim = decideVerified({
+      ...inFlightMiss,
+      namedRequestInFlight: false,
+      channelsRead: [ChannelId.UI],
+      unsettled: {
+        waitedFor: "text 'Generated script for'",
+        stillInFlight: ['POST /api/generate'],
+      },
+    });
+    expect(pageClaim.verified).toBe(Verified.UNKNOWN);
+    expect(pageClaim.verifiedReason).toBe(VerifiedReason.WINDOW_CLOSED_EARLY);
+    const readOnly = decideVerified({
+      ...inFlightMiss,
+      namedRequestInFlight: false,
+      channelsRead: [ChannelId.UI],
+      unsettled: { waitedFor: "text 'Generated script for'", stillInFlight: ['GET /api/poll'] },
+    });
+    expect(readOnly.verified).toBe(Verified.NO);
   });
 
   it('still fails when the named request is not the one left open', () => {

@@ -204,7 +204,8 @@ describe('a platform refusal part-way through a drive', () => {
       toolset([]),
     );
     expect(result.stopReason).toBe('broken');
-    expect(result.error).toBe(FREE_USED);
+    // The platform's own words, after the lead its code picks.
+    expect(result.error).toContain(FREE_USED);
     expect(result.proved, 'a check held before the cut-off').toBe(true);
     expect(result.goalMet).toBe(false);
   });

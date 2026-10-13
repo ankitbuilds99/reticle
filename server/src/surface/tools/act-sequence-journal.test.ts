@@ -163,7 +163,7 @@ describe('a journey`s expects are checks on the record', () => {
     expect(runs).toHaveLength(1);
     const run = buildVerificationRun(runs[0] as (typeof runs)[number], () => 0);
     expect(run.checks).toHaveLength(2);
-    expect(run.verdict.status).toBe(VerdictStatus.PARTIAL);
+    expect(run.verdict.status).toBe(VerdictStatus.FAIL);
     expect(run.agentClaim).toBe(VerdictStatus.PASS);
   });
 });

@@ -9,7 +9,6 @@ import { recordNotes } from './human/notes-ledger.js';
 import { commandPayload } from './command-payload.js';
 import { LastAct } from './last-act.js';
 import { GapLedger } from '@reticlehq/engine/evidence/gap-ledger.js';
-import { CaptureLedger } from '@/surface/tools/feature-capture.js';
 import { commandTimeoutMessage, type PageRuntime } from './timing/command-timeout.js';
 import { readHealthEvent, healthNotices, type SessionHealth } from './session-health.js';
 import { MIRRORED_COMMANDS, mirroredNarration } from './presence/session-mirror.js';
@@ -574,11 +573,6 @@ export class Session implements HandshakeFacts {
    * end of it.
    */
   readonly gaps = new GapLedger();
-  /**
-   * The read-only calls the journal does not keep, so "was `reticle_context` ever called" has
-   * something to fold. See surface/tools/feature-capture.ts — it is the only state that instrument adds.
-   */
-  readonly capture = new CaptureLedger();
 
   // ── Server-authoritative liveness (immune to browser-tab throttling) ──────────────
 

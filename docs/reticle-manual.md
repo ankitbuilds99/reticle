@@ -10,7 +10,9 @@ Every row below is a call that was made against a running app and the answer tha
 
 `refused (names the fix)` means the error told you what to call instead, so you can correct without reading anything else. `refused (no fix named)` means it did not.
 
-## reticle_snapshot
+## reticle_look { action: "page" }
+
+Probed as `reticle_snapshot`, its name before the merge, which still answers. Call it as `reticle_look { action: "page" }` and pass the arguments below alongside `action`.
 
 | you call it with | you get back | bytes |
 | --- | --- | --- |
@@ -18,7 +20,9 @@ Every row below is a call that was made against a running app and the answer tha
 | the documented call: `{"mode":"interactive"}` | ran | 434 |
 | a value outside the allowed set: `{"mode":"not-a-mode"}` | refused (names the fix) | 236 |
 
-## reticle_query
+## reticle_look { action: "find" }
+
+Probed as `reticle_query`, its name before the merge, which still answers. Call it as `reticle_look { action: "find" }` and pass the arguments below alongside `action`.
 
 | you call it with | you get back | bytes |
 | --- | --- | --- |
@@ -26,7 +30,9 @@ Every row below is a call that was made against a running app and the answer tha
 | the documented call: `{"by":"role","value":"button"}` | ran | 200 |
 | a value outside the allowed set: `{"by":"telepathy","value":"x"}` | refused (names the fix) | 290 |
 
-## reticle_network
+## reticle_observe { action: "network" }
+
+Probed as `reticle_network`, its name before the merge, which still answers. Call it as `reticle_observe { action: "network" }` and pass the arguments below alongside `action`.
 
 | you call it with | you get back | bytes |
 | --- | --- | --- |
@@ -34,13 +40,17 @@ Every row below is a call that was made against a running app and the answer tha
 | the documented call: `{"limit":5}` | ran | 1175 |
 | a number outside its range: `{"limit":-1}` | refused (names the fix) | 222 |
 
-## reticle_console
+## reticle_observe { action: "console" }
+
+Probed as `reticle_console`, its name before the merge, which still answers. Call it as `reticle_observe { action: "console" }` and pass the arguments below alongside `action`.
 
 | you call it with | you get back | bytes |
 | --- | --- | --- |
 | an argument the tool does not declare: `{"thisArgDoesNotExist":1}` | refused (names the fix) | 293 |
 
-## reticle_state
+## reticle_look { action: "state" }
+
+Probed as `reticle_state`, its name before the merge, which still answers. Call it as `reticle_look { action: "state" }` and pass the arguments below alongside `action`.
 
 | you call it with | you get back | bytes |
 | --- | --- | --- |

@@ -147,3 +147,17 @@ describe('gapSummary', () => {
     expect(gapSummary([])).toMatchObject({ claims: 0, held: 0, failed: 0, undecided: 0 });
   });
 });
+
+// The review: the session's result block (this fold) and the run's verdict (computeVerdict) read the
+// same actions, and only one excused an early look — `claim: pass` beside "Reticle result: failed".
+describe('a passive check the same claim later proves', () => {
+  const passive = { claim: "text 'Done'", declaredBeforeActing: false };
+  it('is not counted as a failure, as the run does not count it', () => {
+    const summary = gapSummary([
+      claim(Verified.NO, VerifiedReason.ASSERTION_FAILED, passive),
+      claim(Verified.YES, undefined, passive),
+    ]);
+    expect(summary.failed).toBe(0);
+    expect(summary.held).toBe(1);
+  });
+});

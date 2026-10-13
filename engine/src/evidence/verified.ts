@@ -1,6 +1,6 @@
 import { bodyCaptureRemedy } from './body-capture-remedy.js';
 import {
-  type ChannelId,
+  ChannelId,
   ContradictionKind,
   MUTATING_METHODS,
   Verified,
@@ -201,6 +201,17 @@ interface VerifiedVerdict {
   because: string;
 }
 
+/**
+ * The sentence a vacuous-grade `unknown` carries. Exported because it is the CALLER's unknown — it
+ * asserted nothing real — and the feedback invite has to tell it from "Reticle could not tell".
+ */
+export const VACUOUS_BECAUSE =
+  'nothing was asserted at a real grade, so passing proves nothing — assert a signal, request, or state path';
+
+/** A `"POST /api/x"` label: is it a write? */
+const isWriteLabel = (label: string): boolean =>
+  MUTATING_METHODS.includes((label.split(' ')[0] ?? '').toUpperCase());
+
 export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   const { pass, honesty, contradictions = [], settled, outcomePending, outcomeUnread } = inputs;
 
@@ -310,6 +321,34 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
     };
   }
 
+  // The same rule, for a claim that does not NAME the request. Driven over MCP: the Harness asserted
+  // "Generated script for" the moment Generate was pressed, while the POST that produces that text
+  // was still open; `no` failed the journey, and the same assert held a second later. A write that
+  // has not answered is an outcome not in yet, whatever the claim is about. It only ever turns a
+  // `no` into `unknown`, never into a `yes`.
+  //
+  // A claim about the network keeps the named-request rule above: its request not firing while an
+  // UNRELATED write is open is a real miss. Only a claim that reads the page waits on the write.
+  const readsThePageOnly =
+    inputs.channelsRead !== undefined &&
+    0 < inputs.channelsRead.length &&
+    !inputs.channelsRead.includes(ChannelId.NET);
+  if (
+    false === pass &&
+    readsThePageOnly &&
+    (inputs.unsettled?.stillInFlight ?? []).some(isWriteLabel)
+  ) {
+    return {
+      verified: Verified.UNKNOWN,
+      verifiedReason: VerifiedReason.WINDOW_CLOSED_EARLY,
+      because: unsettledBecause(
+        'a write this window started had not answered when the claim was read, so the ' +
+          'consequence was not disproved — it had not arrived yet',
+        inputs.unsettled,
+      ),
+    };
+  }
+
   // ABOVE the failure clause, and for the same reason `observationLost` is: a consequence that has
   // not happened YET has not failed. `202 Accepted` is the only word HTTP has for "the outcome does
   // not exist yet", and a not-yet-reconciled write is indistinguishable from a broken one at the
@@ -388,9 +427,7 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   // catch, and its outcome genuinely does not exist yet. A poll or a prefetch left hanging says
   // nothing about the action; an unfinished mutation says the answer is not in yet. Read off the
   // labels the window already carries — and when there are no labels to read, nothing is softened.
-  const openWrite = (inputs.unsettled?.stillInFlight ?? []).some((label) =>
-    MUTATING_METHODS.includes((label.split(' ')[0] ?? '').toUpperCase()),
-  );
+  const openWrite = (inputs.unsettled?.stillInFlight ?? []).some(isWriteLabel);
   const settlementOnly =
     declaredHeld &&
     inputs.unsettled !== undefined &&
@@ -561,8 +598,7 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
     return {
       verified: Verified.UNKNOWN,
       verifiedReason: VerifiedReason.VACUOUS_GRADE,
-      because:
-        'nothing was asserted at a real grade, so passing proves nothing — assert a signal, request, or state path',
+      because: VACUOUS_BECAUSE,
     };
   }
 

@@ -53,7 +53,7 @@ const opts: Omit<VerifyOptions, 'names'> = {
 };
 
 describe('ReticleRunner.verify', () => {
-  it('replays the named flows and assembles a PARTIAL verdict when one fails', async () => {
+  it('replays the named flows and assembles a FAIL verdict when one fails', async () => {
     const port = fakePort(
       {
         login: replay('login', ReplayStatus.OK),
@@ -67,7 +67,7 @@ describe('ReticleRunner.verify', () => {
 
     expect(run.flows.map((f) => f.status)).toEqual([RunFlowStatus.PASS, RunFlowStatus.FAIL]);
     expect(run.flows[1]?.failureReason).toBe('POST /api/order 500');
-    expect(run.verdict.status).toBe(VerdictStatus.PARTIAL);
+    expect(run.verdict.status).toBe(VerdictStatus.FAIL);
     expect(run.runId).toBe('run-1');
     expect(run.profile).toBe(RunProfile.PROD_PREVIEW);
     expect(run.repair).toBeUndefined(); // prod-preview redacts dev-only fix instructions

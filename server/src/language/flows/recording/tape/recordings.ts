@@ -8,6 +8,8 @@ export interface RecordedStep {
   args: Record<string, unknown>;
   /** false if any ref could not be normalized to a testid (replay only valid in-session). */
   stable: boolean;
+  /** The caller's per-step wait budget, when one was explicitly provided. */
+  timeoutMs?: number;
   /** Optional post-condition annotation carried into the on-disk flow's expect. */
   expect?: Predicate;
   /**
@@ -137,7 +139,7 @@ export const ambientRecordingOf = (session: string | undefined): string =>
   session === undefined ? AMBIENT_RECORDING : `${AMBIENT_RECORDING}:${session}`;
 
 /** Whether a recording is an ambient tape: the daemon's own, never one somebody opened. */
-const isAmbient = (name: string): boolean =>
+export const isAmbient = (name: string): boolean =>
   AMBIENT_RECORDING === name || name.startsWith(`${AMBIENT_RECORDING}:`);
 
 /**

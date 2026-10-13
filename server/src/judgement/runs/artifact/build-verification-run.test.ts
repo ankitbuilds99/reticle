@@ -56,12 +56,12 @@ describe('computeVerdict', () => {
     expect(v.status).toBe(VerdictStatus.PASS);
   });
 
-  it('mixed pass + fail → PARTIAL', () => {
+  it('mixed pass + fail → FAIL: a failure beside a pass is still a failure', () => {
     const v = computeVerdict({
       ...base,
       flows: [flow('a', RunFlowStatus.PASS, 'x'), flow('b', RunFlowStatus.FAIL, 'y')],
     });
-    expect(v.status).toBe(VerdictStatus.PARTIAL);
+    expect(v.status).toBe(VerdictStatus.FAIL);
     expect(v.reasons.some((r) => r.includes('flow b'))).toBe(true);
   });
 
@@ -87,6 +87,18 @@ describe('computeVerdict', () => {
     const v = computeVerdict({ ...base, checks: [check(Verified.YES), check(Verified.UNKNOWN)] });
     expect(v.status).toBe(VerdictStatus.PARTIAL);
     expect(v.reasons.some((r) => r.includes('undecided'))).toBe(true);
+  });
+
+  // Driven over MCP: a passive assert read the text Generate produces before its POST answered,
+  // and the same claim held a moment later; the run said PARTIAL for a journey that worked.
+  it('a passive check superseded by the same claim holding later does not fail the run', () => {
+    const early = { predicate: "text 'Done'", status: Verified.NO, declaredBeforeActing: false };
+    const later = { predicate: "text 'Done'", status: Verified.YES, declaredBeforeActing: false };
+    expect(computeVerdict({ ...base, checks: [early, later] }).status).toBe(VerdictStatus.PASS);
+    // A declared check that failed stays a failure, and so does a probe nothing later proved.
+    const declared = { ...early, declaredBeforeActing: true };
+    expect(computeVerdict({ ...base, checks: [declared, later] }).status).toBe(VerdictStatus.FAIL);
+    expect(computeVerdict({ ...base, checks: [later, early] }).status).toBe(VerdictStatus.FAIL);
   });
 
   it('only failures → FAIL', () => {

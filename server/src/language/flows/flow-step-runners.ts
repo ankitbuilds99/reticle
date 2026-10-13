@@ -42,6 +42,9 @@ import {
 import { nearestRoleName, type RoleCandidate } from './role-anchor-nearest.js';
 import { roleDriftReason } from '@/judgement/outcome/role-drift-reason.js';
 
+/** The live act_sequence tool gives each step this transport budget when none was supplied. */
+export const DEFAULT_SEQUENCE_STEP_TIMEOUT_MS = 8_000;
+
 /** Query args for a NAMED role anchor — the handle that identifies an instance, not a JSX site. */
 function roleQueryArgs(
   anchor: Extract<FlowAnchor, { kind: typeof AnchorKind.ROLE }>,
@@ -578,7 +581,15 @@ export async function runSequenceStep(
   ): Promise<Awaited<ReturnType<typeof session.command>>> => {
     session.beginAction?.(ReticleTool.FLOW_REPLAY, { steps: steps.length });
     try {
-      return await session.command(ReticleCommand.ACT_SEQUENCE, { steps });
+      // A recorded zero means "do not wait for the element", not "abort the whole batch now".
+      // Keep the transport alive long enough for the sequence's default per-step budget, and give
+      // an omitted timeout the same aggregate budget as the live tool's independent step waits.
+      const perStepTimeout =
+        undefined === step.timeoutMs || 0 === step.timeoutMs
+          ? DEFAULT_SEQUENCE_STEP_TIMEOUT_MS
+          : step.timeoutMs;
+      const timeoutMs = perStepTimeout * steps.length;
+      return await session.command(ReticleCommand.ACT_SEQUENCE, { steps }, timeoutMs);
     } finally {
       session.finishAction?.();
     }

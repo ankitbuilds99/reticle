@@ -12,11 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Start or deploy your app first; the action needs a URL that answers.
-      - uses: reticlehq/reticle/action@main
+      - uses: reticlehq/reticle/action@v3.7.0
         with:
           url: https://preview.example.com
           api-key: ${{ secrets.RETICLE_API_KEY }}
 ```
+
+Pin a release tag or a commit SHA, never a branch: `@main` changes under you, so the same workflow can pass one day and fail the next with no change of yours.
 
 ## Inputs
 

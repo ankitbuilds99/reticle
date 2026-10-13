@@ -16,6 +16,7 @@
  * decision with a separate owner, and building the local one first is what makes that decision
  * answerable from something other than a guess.
  */
+import { supersededChecks } from '@reticlehq/engine/evidence/superseded-checks.js';
 import {
   JournalVerdictEffectSchema,
   Verified,
@@ -98,9 +99,19 @@ export function gapSummary(actions: readonly JournalAction[]): GapSummary {
     falseGreensCaught: 0,
     failures: [],
   };
-  for (const action of actions) {
-    const verdict = verdictOf(action);
-    if (verdict === undefined) continue;
+  const verdicts = actions.map(verdictOf).filter((v): v is JournalVerdictEffect => v !== undefined);
+  // A passive check that read too early is not counted: the one rule every fold applies
+  // (superseded-checks.ts), so this block and the run's verdict cannot disagree.
+  const superseded = supersededChecks(
+    verdicts.map((v) => ({
+      key: v.claim,
+      passive: false === v.declaredBeforeActing,
+      held: Verified.YES === v.verified,
+      failed: Verified.NO === v.verified,
+    })),
+  );
+  for (const [at, verdict] of verdicts.entries()) {
+    if (superseded.has(at)) continue;
     summary.claims += 1;
     switch (verdict.verified) {
       case Verified.YES:

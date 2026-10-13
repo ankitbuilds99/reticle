@@ -130,6 +130,13 @@ function withoutCutStart(line: string, own: string, min: number): string {
   return rest;
 }
 
+/** The end state a goal quotes: its last quoted text that it does not negate. */
+export function endOf(goal: string): string | undefined {
+  return parseGoals(goal)
+    .filter((g) => true !== g.absent)
+    .at(-1)?.text;
+}
+
 /** The observable goals in a persona: whatever it quoted, each marked absent when it was negated. */
 export function parseGoals(persona: string | undefined): Goal[] {
   if (persona === undefined) return [];
@@ -260,6 +267,11 @@ async function settle(
     await invoke(ReticleTool.WAIT_FOR, {
       predicate: { kind: PredicateKind.SETTLED },
       timeout_ms: SETTLE_MS,
+      // From the session's start, not from this call: a request the drive's last click opened is
+      // in flight BEFORE this wait begins, and a window that starts now cannot see it. Driven over
+      // MCP: the drive ended on "Generating…", the page read as settled, and a journey whose end
+      // appeared a second later was failed. SETTLE_MS still bounds a request that never answers.
+      since: 0,
     });
   } catch {
     /* a page that never settles is still read as it stands */

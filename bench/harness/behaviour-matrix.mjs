@@ -28,6 +28,19 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BASELINE = join(ROOT, 'bench', 'behaviour-baseline.json');
 const MANUAL = join(ROOT, 'docs', 'reticle-manual.md');
 const CLI = join(ROOT, 'server', 'dist', 'command', 'cli.js');
+// The probes call the pre-merge names, which still dispatch; the manual must not teach them as the
+// names to call. Read the merge table from the same build the probes ran against, so a heading
+// cannot drift from the surface an agent is shown.
+const { SURFACE_MERGE_PLANS } = await import(
+  join(ROOT, 'server', 'dist', 'surface', 'tools', 'tools.js')
+);
+const CURRENT_NAME = new Map(
+  SURFACE_MERGE_PLANS.flatMap((plan) =>
+    Object.entries(plan.members)
+      .filter(([, member]) => member !== plan.name)
+      .map(([action, member]) => [member, `${plan.name} { action: "${action}" }`]),
+  ),
+);
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : d);
@@ -311,7 +324,17 @@ function renderManual(rows) {
     '',
   ];
   for (const [tool, probes] of byTool(rows)) {
-    lines.push(`## ${tool}`, '');
+    const current = CURRENT_NAME.get(tool);
+    if (current === undefined) {
+      lines.push(`## ${tool}`, '');
+    } else {
+      lines.push(
+        `## ${current}`,
+        '',
+        `Probed as \`${tool}\`, its name before the merge, which still answers. Call it as \`${current}\` and pass the arguments below alongside \`action\`.`,
+        '',
+      );
+    }
     lines.push('| you call it with | you get back | bytes |');
     // Spaced pipes: prettier's markdown table style. Same reason as the prose above.
     lines.push('| --- | --- | --- |');

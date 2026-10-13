@@ -80,6 +80,9 @@ const PINNED: readonly PublicSurface[] = [
       // record, shared by the live act path and replay so a driven step and a replayed one describe
       // what happened in the same words.
       'evidence/step-effect.ts',
+      // New public entry point: which early checks a later pass supersedes, the one rule every fold
+      // of a run's checks applies (the Harness tally, the run verdict, the session's result block).
+      'evidence/superseded-checks.ts',
       'evidence/uncaptured-bodies.ts',
       'evidence/undeclared-change.ts',
       'evidence/unread-outcome.ts',
@@ -92,6 +95,8 @@ const PINNED: readonly PublicSurface[] = [
       // New public entry point: the near-miss clause for an exact role+name predicate that missed,
       // beside its testid and split-text siblings (#875).
       'question/predicate/name-near-miss.ts',
+      // What the net channel cannot see, split from predicate-eval.ts at its line cap.
+      'question/predicate/net-blind-spots.ts',
       'question/predicate/net-evidence.ts',
       'question/predicate/observed-in-window.ts',
       'question/predicate/predicate-asks.ts',

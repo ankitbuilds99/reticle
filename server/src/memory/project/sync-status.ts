@@ -203,7 +203,15 @@ export function seeRunLine(dashboardUrl: string, runId: string): string {
  * A saved Harness plan's page on the dashboard, beside its runs, under its project: opened under
  * another project's sticky scope the page answered "We could not find that plan" to its owner.
  */
-export function dashboardPlanUrl(dashboardUrl: string, planId: string, projectId?: string): string {
+export function dashboardPlanUrl({
+  dashboardUrl,
+  planId,
+  projectId,
+}: {
+  dashboardUrl: string;
+  planId: string;
+  projectId?: string | undefined;
+}): string {
   const page = `${dashboardOrigin(dashboardUrl)}${DASHBOARD_PLAN_PATH}${encodeURIComponent(planId)}`;
   return projectId === undefined ? page : `${page}?project=${encodeURIComponent(projectId)}`;
 }

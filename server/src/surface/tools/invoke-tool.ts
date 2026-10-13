@@ -38,19 +38,14 @@ import { emitBugFoundHook, emitVerdictHook } from '@/hooks/hook-emit.js';
 import { reportOnboardingStep } from '@/telemetry/onboarding-funnel.js';
 import { noteActed, noteFirstVerdict, noteOnboardingFirst } from '@/telemetry/onboarding-firsts.js';
 import { OnboardingPhase, OnboardingStepStatus } from '@reticlehq/core/telemetry';
-import { DiscoveryInvite, asString } from '@reticlehq/core';
+import { DiscoveryInvite } from '@reticlehq/core';
 import { SESSION_ID_ARG, sessionIdFromArgs, spentRefFromArgs } from './tools-helpers.js';
-import { EnvelopeKey, STEP_SHOT_TOOLS } from './tool-kit.js';
+import { EnvelopeKey, HOST_STUB_NOTE, STEP_SHOT_TOOLS } from './tool-kit.js';
 import { ReticleTool } from '@reticlehq/core';
 import { takeFeedbackPrompt } from './feedback-tools.js';
 import { takeFeedbackUndelivered } from '@/telemetry/feedback-delivery.js';
 import type { Session } from '@/portal/session/session.js';
 import { noteRefsMinted, wrongTabRefusal } from '@/portal/session/facts/ref-provenance.js';
-import {
-  CAPTURED_TOOLS,
-  noteCapturedCall,
-  noteToolDispatched,
-} from '@/surface/tools/feature-capture.js';
 import { span } from '@/trace.js';
 import { takeStepShot } from '@/features/visual/step-shots.js';
 import {
@@ -61,6 +56,7 @@ import {
   recordImpact,
 } from '@/memory/impact/impact-recorder.js';
 import { FrictionKind, frictionOf, inviteFor } from './feedback-invite.js';
+import { VACUOUS_BECAUSE } from '@reticlehq/engine/evidence/verified.js';
 import type { ToolCall, ToolDef, ToolDeps } from './tool-kit.js';
 
 /**
@@ -319,7 +315,9 @@ function frictionInviteFor(toolName: string, raw: unknown): FrictionKind | undef
   if (!isPlainObject(raw) || toolName === ReticleTool.RUN) return undefined;
   const friction = frictionOf({
     unknownTool: false,
-    verifiedUnknown: 'unknown' === raw['verified'],
+    // A vacuous unknown is the caller's: it asserted nothing real (a bare `settled` wait, which the
+    // instructions recommend). Inviting a bug report there told agents Reticle had failed them.
+    verifiedUnknown: 'unknown' === raw['verified'] && VACUOUS_BECAUSE !== raw['because'],
     repeatRun: getSessionMetrics().currentRun,
     errored: resultIsError(raw),
     // A verdict is progress. Without this, three successful act_and_wait calls in a row — the exact
@@ -560,42 +558,6 @@ async function dispatchTool<Ext>(
     const message = session.versionSkew;
     reportRefusal(tool.name, message);
     throw new Error(message);
-  }
-  // The read-only calls the journal never keeps, recorded HERE because this is the one dispatch
-  // point every call routes through — a second recording site is a second thing to forget, and this
-  // instrument exists precisely because nothing was recorded before. Recorded before the handler
-  // runs: a read dispatches no action, so the counter reads the same either side.
-  //
-  // `reticle_context` is session-EXEMPT, so `session` above is undefined for it and it needs its own
-  // lenient resolve. Failing that resolve is silent by design: a call made with nothing connected
-  // has no per-session ledger to land in, and an instrument must never be why a tool call fails.
-  //
-  // EVERY tool is counted here, not just the read set: which of the 70-odd names in the table an
-  // agent actually reaches for is the question a decision about cutting or consolidating the surface
-  // turns on, and it had no answer. `reticle_run` is the one exclusion, for the same reason
-  // `reportRefusal` and `bugsInResult` exclude it — its handler calls `runTool` on the real tool, so
-  // the inner call is already counted under the name that RAN, and counting the wrapper too would
-  // both double the total and hide the run-only tier behind a single wrapper name. That tier is
-  // precisely the one the decision hinges on. See surface/tools/tool-hit-rate.ts.
-  if (ReticleTool.RUN !== tool.name) {
-    let target = session;
-    if (target === undefined) {
-      try {
-        target = deps.sessions.resolve(rawSessionId);
-      } catch {
-        target = undefined;
-      }
-    }
-    if (target !== undefined) {
-      noteToolDispatched(target, tool.name);
-      if (CAPTURED_TOOLS.has(tool.name)) {
-        const subject = asString(args['ref']) ?? asString(args['target']);
-        noteCapturedCall(target, {
-          tool: tool.name,
-          ...(subject === undefined ? {} : { subject }),
-        });
-      }
-    }
   }
   // A ref that was handed out by a DIFFERENT tab, on a call that named no session. Refused here, at
   // the one point that knows both the ref and the tab resolution picked — the handler only learns
@@ -869,6 +831,14 @@ async function dispatchTool<Ext>(
   const arrivedId = 'string' === typeof result['sessionId'] ? result['sessionId'] : driven.id;
   const resolved = deps.sessions.get?.(arrivedId) ?? driven;
   const envelope: Record<string, unknown> = {};
+  // A leased tab opened with `initScript` runs a STUB of the bindings a desktop shell injects. Said
+  // on every session-bound result, not only on verdicts, for the same reason health is: a green from
+  // that tab proves the app's view logic, and nothing else in the result would say so.
+  // Optional-called: a partial pool in a test double has no lookup, and absence must read as "no
+  // stub", never as a crash on the whole tool surface.
+  if (true === deps.pool?.stubInstalled?.(resolved.id)) {
+    envelope[EnvelopeKey.HOST_STUB] = HOST_STUB_NOTE;
+  }
   // The health block is idempotent: add it only when the handler didn't already include a `session`.
   if (!('session' in result)) Object.assign(envelope, healthEnvelope(resolved));
   // Lease + age-warning are INDEPENDENT of the health block. Previously the `'session' in result`

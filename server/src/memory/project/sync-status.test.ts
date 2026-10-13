@@ -90,10 +90,14 @@ describe('the run a person is sent to', () => {
   // Re-check: a plan link opened under another project's sticky scope answered "We could not find
   // that plan" to its owner. The link names its project.
   it('links a plan under its project', () => {
-    expect(dashboardPlanUrl('https://app.reticle.sh/x', 'hp_1', 'shop-7f')).toBe(
-      'https://app.reticle.sh/plans/hp_1?project=shop-7f',
-    );
-    expect(dashboardPlanUrl('https://app.reticle.sh/', 'hp_1')).toBe(
+    expect(
+      dashboardPlanUrl({
+        dashboardUrl: 'https://app.reticle.sh/x',
+        planId: 'hp_1',
+        projectId: 'shop-7f',
+      }),
+    ).toBe('https://app.reticle.sh/plans/hp_1?project=shop-7f');
+    expect(dashboardPlanUrl({ dashboardUrl: 'https://app.reticle.sh/', planId: 'hp_1' })).toBe(
       'https://app.reticle.sh/plans/hp_1',
     );
   });
@@ -122,6 +126,25 @@ describe("a refused key, in the platform's words", () => {
   it('keeps its own sentence for a generic or unreadable answer', () => {
     expect(refusalSaid(body('unauthorized', 'sign in or API key required'))).toBe(KEY_REFUSED);
     expect(refusalSaid('not json')).toBe(KEY_REFUSED);
+  });
+
+  // A HUD audit for the release: this sentence is what the agent reads, and nothing pinned it — the
+  // reader below was tested, the words a refused key reaches the agent in were not.
+  it("tells the agent the last push was refused, in the platform's words", () => {
+    const a = run('a');
+    const said = describeSync(
+      summarizeSync({
+        linked: true,
+        runs: [a],
+        state: {
+          sentRunHashes: {},
+          lastError: `status 401: ${body('removed_from_workspace', 'You were removed from Acme.')}`,
+        },
+      }),
+      0,
+    );
+    expect(said).toContain('the last push was refused: You were removed from Acme.');
+    expect(said).not.toContain('the last push failed');
   });
 
   it('reads it from what the last sync recorded', () => {

@@ -71,8 +71,8 @@ describe('how much of the protocol the shipping product uses', () => {
     // Detected by IMPORT now, which is what distinguishes it: there are two functions called
     // `subjectOf` in this repository. The protocol's (`@reticlehq/core`, returns a `SubjectRef`)
     // and the journal's (`runs/artifact/run-context.js`, returns a string key for folding actions).
-    // A bare grep for the name catches `feature-capture.ts`, which is the journal one and has
-    // nothing to do with the protocol.
+    // A bare grep for the name catches importers of the journal one, which has nothing to do with
+    // the protocol.
     //
     // Two writers is the intended state, and they are different answers to "can this know where it
     // was": the realm knows because it IS the connection; session-end knows only when the session

@@ -31,6 +31,7 @@ import {
   Verified,
 } from '@reticlehq/core';
 import type { ToolOutcome } from './harness.js';
+import { supersededChecks } from '@reticlehq/engine/evidence/superseded-checks.js';
 import { PredicateSchema } from '@reticlehq/engine/question/predicate/predicate-schema.js';
 import { describeWaitTarget } from '@reticlehq/engine/evidence/unsettled.js';
 
@@ -275,22 +276,34 @@ interface GradedCheck {
 function gradedChecks(toolCalls: readonly ToolOutcome[]): GradedCheck[] {
   const heldPresses = new Set<string>();
   const out: GradedCheck[] = [];
-  for (const [index, made] of toolCalls.entries()) {
+  const checks = toolCalls.flatMap((made, index) => {
     const call = throughRun(made);
     const args = asRecord(call.args);
     const until = untilOf(args);
     const isCheck =
       ReticleTool.ASSERT === call.name ||
       (ReticleTool.ACT_AND_WAIT === call.name && until !== undefined);
-    if (!isCheck || call.isError) continue;
-    const result = asRecord(call.result);
-    // The driver's own wrong guess about the route checked the driver, not the app.
-    if (routeGuessMissed(args, result)) continue;
+    if (!isCheck || call.isError) return [];
     const predicate = PredicateSchema.safeParse(until);
     const key = predicate.success
       ? `${predicate.data.kind}|${describeWaitTarget(predicate.data)}`
       : JSON.stringify(until ?? null);
+    return [{ index, call, args, result: asRecord(call.result), key }];
+  });
+  const superseded = supersededChecks(
+    checks.map(({ call, result, key }) => ({
+      key,
+      passive: ReticleTool.ASSERT === call.name,
+      held: Verified.YES === asString(result['verified']),
+      failed: Verified.NO === asString(result['verified']),
+    })),
+  );
+  for (const [at, { index, args, result, key }] of checks.entries()) {
+    // The driver's own wrong guess about the route checked the driver, not the app.
+    if (routeGuessMissed(args, result)) continue;
     const verified = asString(result['verified']);
+    // A passive assert that read too early: see superseded-checks.ts.
+    if (superseded.has(at)) continue;
     // A second press of a control whose claim already held is the Harness's own extra action.
     const ref = asString(args['ref']);
     const pressed = ref === undefined ? undefined : `${ref}|${key}`;
@@ -469,45 +482,89 @@ export interface JourneyStatus {
   status: string;
 }
 
+/** A run's verdict and the line that says it: the word is decided once, never read back out of the line. */
+export interface RunVerdict {
+  verified: Verified;
+  line: string;
+}
+
+/** Statuses that leave a plan proved: passed, or a side road deliberately not taken (named in its line). */
+const SETTLED_JOURNEY: ReadonlySet<string> = new Set([ScriptStatus.PASSED, ScriptStatus.NOT_TAKEN]);
+
 /**
  * A plan run's verdict is its journeys', decided as the platform decides it (`planRunVerdict`): any
- * failed → failed, else any passed → proved, else nothing proved. Undefined when there is no plan.
+ * failed → failed; every journey passed (or deliberately not taken) → proved; some passed beside
+ * journeys left undecided or blocked → not proved. Undefined when there is no plan.
+ *
+ * "Any passed → proved" read PROVED for a plan whose other journeys a credit cut-off had blocked:
+ * one journey proved and the rest never decided, reported as the whole plan proved.
  */
-function journeysLine(journeys: readonly JourneyStatus[], counts: string): string | undefined {
+function journeysVerdict(
+  journeys: readonly JourneyStatus[],
+  counts: string,
+): RunVerdict | undefined {
   if (0 === journeys.length) return undefined;
   const of = (status: string): number => journeys.filter((j) => status === j.status).length;
   const total = String(journeys.length);
+  const passed = of(ScriptStatus.PASSED);
   if (0 < of(ScriptStatus.FAILED))
-    return `NOT PROVED — ${String(of(ScriptStatus.FAILED))} of ${total} journey(s) failed${counts}.`;
-  if (0 < of(ScriptStatus.PASSED))
-    return `PROVED — ${String(of(ScriptStatus.PASSED))} of ${total} journey(s) passed${counts}.`;
-  return `NOT PROVED — no journey passed${counts}.`;
+    return {
+      verified: Verified.NO,
+      line: `NOT PROVED — ${String(of(ScriptStatus.FAILED))} of ${total} journey(s) failed${counts}.`,
+    };
+  if (0 < passed && journeys.every((j) => SETTLED_JOURNEY.has(j.status)))
+    return {
+      verified: Verified.YES,
+      line: `PROVED — ${String(passed)} of ${total} journey(s) passed${counts}.`,
+    };
+  if (0 < passed)
+    return {
+      verified: Verified.UNKNOWN,
+      line: `NOT PROVED — ${String(passed)} of ${total} journey(s) passed and the rest were not decided${counts}.`,
+    };
+  return { verified: Verified.UNKNOWN, line: `NOT PROVED — no journey passed${counts}.` };
 }
 
 /**
- * The first line a caller reads, and the one the HUD ends on. A drive whose only passing check was
- * a page change, beside a refund that failed, is NOT "proved its checks"; that line ended a run
- * where the journey it was asked to prove had failed.
+ * The first line a caller reads, and the one the HUD ends on, with the verdict it states. A drive
+ * whose only passing check was a page change, beside a refund that failed, is NOT "proved its
+ * checks"; that line ended a run where the journey it was asked to prove had failed.
  */
-export function verdictLine(
+export function runVerdict(
   tally: { held: number; failed: number; undecided: number },
   goalMet?: boolean,
   /** A plan's journeys: when there are any, their verdict is the run's. */
   journeys: readonly JourneyStatus[] = [],
-): string {
+): RunVerdict {
   const total = tally.held + tally.failed + tally.undecided;
   const counts = `${String(tally.held)} of ${String(total)} check(s) held, ${String(tally.failed)} failed, ${String(tally.undecided)} undecided`;
-  const planned = journeysLine(journeys, 0 === total ? '' : `; ${counts}`);
+  const planned = journeysVerdict(journeys, 0 === total ? '' : `; ${counts}`);
+  const not = (line: string): RunVerdict => ({ verified: Verified.UNKNOWN, line });
   // Journeys that passed are not the run's goal reached: the goals the run was asked decide it too.
-  if (true === planned?.startsWith('PROVED') && false === goalMet)
-    return `NOT PROVED — ${planned.slice('PROVED — '.length).replace(/\.$/, '')}, but the goal was not reached.`;
+  if (Verified.YES === planned?.verified && false === goalMet)
+    return not(
+      `NOT PROVED — ${planned.line.slice('PROVED — '.length).replace(/\.$/, '')}, but the goal was not reached.`,
+    );
   if (planned !== undefined) return planned;
-  if (0 === total) return 'NOT PROVED: the drive ran no check.';
-  if (0 < tally.failed) return `NOT PROVED — ${counts}. The failures below are findings.`;
-  if (0 < tally.undecided) return `NOT PROVED — ${counts}.`;
+  if (0 === total) return not('NOT PROVED: the drive ran no check.');
+  if (0 < tally.failed)
+    return {
+      verified: Verified.NO,
+      line: `NOT PROVED — ${counts}. The failures below are findings.`,
+    };
+  if (0 < tally.undecided) return not(`NOT PROVED — ${counts}.`);
   // Checks that held on the way are not the journey done.
-  if (false === goalMet) return `NOT PROVED — ${counts}, but the goal was not reached.`;
-  return `PROVED — ${counts}.`;
+  if (false === goalMet) return not(`NOT PROVED — ${counts}, but the goal was not reached.`);
+  return { verified: Verified.YES, line: `PROVED — ${counts}.` };
+}
+
+/** The line alone. */
+export function verdictLine(
+  tally: { held: number; failed: number; undecided: number },
+  goalMet?: boolean,
+  journeys: readonly JourneyStatus[] = [],
+): string {
+  return runVerdict(tally, goalMet, journeys).line;
 }
 
 /** Whether the run is proved, exactly as its headline says: the `proved` an answer carries. */
@@ -516,7 +573,7 @@ export function runProved(
   goalMet?: boolean,
   journeys: readonly JourneyStatus[] = [],
 ): boolean {
-  return verdictLine(tally, goalMet, journeys).startsWith('PROVED');
+  return Verified.YES === runVerdict(tally, goalMet, journeys).verified;
 }
 
 export function describeDrive(

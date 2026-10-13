@@ -4,8 +4,9 @@
  * wait for the Harness or stop it; the Harness's own actions, and the agent's reads, still run.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { ReticleTool } from '@reticlehq/core';
-import type { ToolDeps } from './tool-kit.js';
+import { ReticleTool, SessionState } from '@reticlehq/core';
+import type { Session } from '@/portal/session/session.js';
+import type { ToolDef, ToolDeps } from './tool-kit.js';
 import { TOOLS } from './tools.js';
 import { runTool } from './invoke-tool.js';
 import { DriveOrigin, forgetDrives, startDrive } from '@/features/harness/drive-runs.js';
@@ -13,9 +14,25 @@ import { runDrivenBy } from '@/hooks/driven-by.js';
 
 afterEach(() => forgetDrives());
 
-const tab = { id: 's1' };
+// Enough of a session for a call to run to the end, so a test reads a result instead of a throw.
+const tab: Partial<Session> = {
+  id: 's1',
+  health: () => ({ lastSeenMs: 0, throttled: false, focused: true }),
+  getState: () => SessionState.ACTIVE,
+  drainInbox: () => [],
+  takeSessionLease: () => undefined,
+  ageWarning: () => undefined,
+};
 const deps = { sessions: { resolve: () => tab, get: () => tab } } as unknown as ToolDeps;
 const act = TOOLS.find((t) => ReticleTool.ACT_AND_WAIT === t.name);
+
+/** A tool under `name` whose handler only answers, so the guard is the one thing deciding. */
+const answering = (name: string): ToolDef => ({
+  name,
+  description: '',
+  inputSchema: {},
+  handler: () => Promise.resolve({ ran: true }),
+});
 
 const harnessDriving = (): void => {
   startDrive({
@@ -40,11 +57,20 @@ describe('one driver per tab', () => {
   });
 
   it("never refuses the Harness's own action in the tab it drives", async () => {
-    if (act === undefined) throw new Error('no act_and_wait');
     harnessDriving();
     const answer = await runDrivenBy({ harness: 'h1', driver: 'jev' }, () =>
-      runTool(act, deps, { ref: 'e1', action: 'click' }).catch((e: unknown) => ({ thrown: e })),
+      runTool(answering(ReticleTool.ACT_AND_WAIT), deps, { ref: 'e1', action: 'click' }),
     );
-    expect(JSON.stringify(answer)).not.toMatch(/Harness is driving this tab now/);
+    expect(answer).toMatchObject({ ran: true });
+    expect(answer).not.toHaveProperty('error');
+  });
+
+  it("still runs the agent's reads in the tab the Harness drives", async () => {
+    harnessDriving();
+    for (const read of [ReticleTool.OBSERVE, ReticleTool.SNAPSHOT]) {
+      const answer = await runTool(answering(read), deps, {});
+      expect(answer, read).toMatchObject({ ran: true });
+      expect(answer, read).not.toHaveProperty('error');
+    }
   });
 });

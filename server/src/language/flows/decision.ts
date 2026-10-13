@@ -207,7 +207,8 @@ export function buildDecision(
       nextAction:
         fix !== undefined
           ? `${fix}, or update the flow if the change was intended.`
-          : `inspect ${where ?? 'the step'} — the anchored element is gone; rebind or update the flow.`,
+          : `inspect ${where ?? 'the step'} — the anchored element is not on the page and nothing there looks like a rename. ` +
+            'If the replay began somewhere the recording did not (signed out, another route), record the steps that reach this one; otherwise rebind or update the flow.',
     };
   }
 

@@ -121,6 +121,9 @@ function dumpedPatterns(): string {
   return execFileSync(process.execPath, [ROUTER, '--dump-patterns'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
+    // Never inherit a stdin that may not close: the router used to block on it.
+    input: '',
+    timeout: 30_000,
   });
 }
 

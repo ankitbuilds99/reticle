@@ -133,7 +133,7 @@ describe('false-green guarantee', () => {
     expect(run.verdict.reasons.join(' ')).toContain('nothing');
   });
 
-  it('a mix of one healthy and one severed flow is PARTIAL (not a blanket PASS)', async () => {
+  it('a mix of one healthy and one severed flow is FAIL (not a blanket PASS)', async () => {
     const run = await new ReticleRunner(
       port(
         {
@@ -145,6 +145,6 @@ describe('false-green guarantee', () => {
         [],
       ),
     ).verify({ ...opts, names: ['login', 'checkout'] });
-    expect(run.verdict.status).toBe(VerdictStatus.PARTIAL);
+    expect(run.verdict.status).toBe(VerdictStatus.FAIL);
   });
 });

@@ -8,7 +8,6 @@
  * deterministically with no model in the loop at all.
  */
 
-import { reportAppsNow } from '@/features/harness/platform/local-apps.js';
 import { serverDriver, serverOptionsFromEnv } from '@/features/harness/platform/server-driver.js';
 import { exploreScript } from './harness-script.js';
 import { randomUUID } from 'node:crypto';
@@ -18,16 +17,7 @@ import {
   noteHarnessGoal,
   noteHarnessSpan,
 } from '@/judgement/runs/drive-run.js';
-import {
-  ReticleEnv,
-  ReticleTool,
-  asProjectId,
-  cloudUrlFrom,
-  asRecord,
-  type FlowFile,
-} from '@reticlehq/core';
-import { creditsSpent, creditsUsedLine } from '@reticlehq/core/hud';
-import { planUrl } from '@/features/harness/platform/platform-drives.js';
+import { ReticleEnv, ReticleTool, asProjectId, asRecord, type FlowFile } from '@reticlehq/core';
 import { flowsForSession } from '@/language/flows/flow-store-for-session.js';
 import { projectForRoot } from '@/memory/project/project-for-root.js';
 import type { ToolDeps } from './tool-kit.js';
@@ -40,7 +30,7 @@ import {
 } from '@/features/harness/drive-report.js';
 import { CUSTOM_DRIVER_NAME, SERVER_DRIVER } from '@/features/harness/drivers.js';
 import { buildDomainModel } from '@/judgement/domain/domain-model.js';
-import { isUnmatchedRoot, readContract } from '@/memory/project/dir/reticle-dir.js';
+import { readContract } from '@/memory/project/dir/reticle-dir.js';
 import { sessionRoot, sessionTarget } from '@/memory/project/session-root.js';
 import {
   dashboardPlanUrl,
@@ -50,12 +40,8 @@ import {
 } from '@/memory/project/sync-status.js';
 import { buildHarnessPlan, drivingPlan, planAsText, type HarnessPlan } from './harness-plan.js';
 import { allSessionIntents } from '@/memory/intent/open-intents.js';
-import { fetchPlatformConfig, type ConfigFetch } from '@/features/harness/platform-config.js';
-import {
-  reportPlanBlocked,
-  savedPlanDrivesNothing,
-  type JourneyResult,
-} from '@/features/harness/platform/script.js';
+import type { ConfigFetch } from '@/features/harness/platform-config.js';
+import type { JourneyResult } from '@/features/harness/platform/script.js';
 import {
   DEFAULT_MAX_STEPS,
   runHarness,
@@ -70,6 +56,7 @@ import { reticleToolset } from './harness-toolset.js';
 import { DriveRefusedError, noteDriveLine } from '@/features/harness/drive-runs.js';
 import { personaCredentials } from '@/features/harness/platform/persona-credentials.js';
 import {
+  endOf,
   goalOfDrive,
   parseGoals,
   readOpening,
@@ -80,8 +67,23 @@ import type { RunDisparity } from '@reticlehq/core';
 import type { HarnessMap } from '@reticlehq/core/artifacts';
 import { mapForPlatform } from '@/features/harness/explore/site-map.js';
 import { huntAndGrade, knownRoutes, refreshMap, siteMapFor } from './harness-hunt.js';
-import { instrumentationOf, probeMarkers } from '@/portal/session/recorded-gaps.js';
-import { getSessionMetrics } from '@/telemetry/session-metrics.js';
+export {
+  MSG_HARNESS_DISABLED,
+  MSG_HARNESS_UNCLAIMED,
+  MSG_HARNESS_UNCONFIRMED,
+} from '@/features/harness/platform/refusal.js';
+import { MSG_NO_HARNESS_KEY, refusedForPlan } from './harness-gate.js';
+// The gate a drive passes before it starts moved to its own module; its names are still asked for here.
+export {
+  MSG_GATE_PROMPT_LEAD,
+  MSG_NO_HARNESS_KEY,
+  coverageRefusal,
+  firstLine,
+  harnessAvailable,
+  harnessLockRefusal,
+  refusedByPlatform,
+  withLinkedCredential,
+} from './harness-gate.js';
 
 export interface ExploreOptions {
   /** Who to be, or what to accomplish. Appended to the standing instruction. */
@@ -182,177 +184,10 @@ export interface ExploreResult {
   /** Each goal the session's coding agent also judged, and how the two verdicts compare. */
   disparity?: readonly RunDisparity[];
 }
-
-/**
- * Why the harness is unavailable, phrased as the way to make it available.
- *
- * A missing key is a configuration fact, not a fault, and the sentence a user reads has to tell them
- * the one thing to do about it. Named here because both the CLI and the honest no-flows refusal
- * print it, and two copies of this sentence would drift.
- */
-export const MSG_NO_HARNESS_KEY =
-  `The Reticle Harness runs on the Reticle platform, and a new account gets 10 free credits ` +
-  `to try it: run \`reticle connect\` to link this project and sign in. ` +
-  `Without it, drive the journey yourself with reticle_act_and_wait and an \`until\` on its last step: ` +
-  `what you drive is saved as a flow just the same.`;
-
 /** A driver named that this build no longer has: every Harness decision is the platform's now. */
 const msgUnknownDriver = (asked: string): string =>
   `The Harness driver \`${asked}\` is not available: the Harness runs on the Reticle platform, ` +
   `which drives with the model set for the project in the dashboard.`;
-
-/**
- * The environment, plus the credential this machine already has.
- *
- * `reticle link` mints a project-scoped key and files it in `~/.reticle/credentials.json`; the CLI
- * has read it from there for as long as it has existed. The harness did not, and read only
- * `process.env` — so somebody who had signed in, linked their project and been told they were
- * connected still got "no model configured to drive the app", and the only way out was to find the
- * key in the console and export it by hand. Five manual steps to reach a feature they had already
- * finished setting up.
- *
- * Resolved into the env rather than threaded through four call sites: the drivers and the
- * preference lookup all read an env record, and giving them a completed one leaves each of them
- * exactly as simple as it was. The key precedence is the resolver's, the same as sync's and the
- * CLI's: the stored key for the link's host, else the exported one (which is how CI, with no
- * keystore, gets here). An explicitly exported HOST still wins, so a proxy is not overridden.
- *
- * The credential arrives through `deps.linkedCloud`, a port, because resolving it here would make
- * the tool surface reach into `memory/cloud` — a reach the directory guard refused, correctly.
- */
-export async function withLinkedCredential(
-  deps: ToolDeps,
-  env: Record<string, string | undefined>,
-  /**
-   * The tab a drive is for: its own project's link, not the daemon's. A plan saved with the
-   * daemon's key while its runs synced under the tab's project left every run link of the plan
-   * "Run unavailable". Absent: the daemon's own link.
-   */
-  tab?: { sessionId: string | undefined },
-): Promise<Record<string, string | undefined>> {
-  try {
-    const root = tab === undefined ? undefined : tabRoot(deps, tab);
-    // A tab whose page reported no project (its root is `unmatched/`) is nobody else's: it drives on
-    // the daemon's own link, never "run reticle connect" to a project that is linked.
-    const own = root !== undefined && isUnmatchedRoot(root) ? undefined : root;
-    const linked = await deps.linkedCloud?.(own);
-    if (linked === undefined || null === linked) return env;
-    return {
-      ...env,
-      [ReticleEnv.API_KEY]: linked.apiKey,
-      [ReticleEnv.CLOUD_URL]: cloudUrlFrom(env) ?? linked.url,
-    };
-  } catch {
-    // A credential store that cannot be read is "not linked", not an error. The harness is optional
-    // and its absence is a routine answer; a drive must never fail because a JSON file was odd.
-    return env;
-  }
-}
-
-/** A tab's `.reticle`, or undefined (the daemon's) when the tab cannot be resolved to one. */
-function tabRoot(deps: ToolDeps, tab: { sessionId: string | undefined }): string | undefined {
-  try {
-    return sessionRoot(deps, tab.sessionId);
-  } catch {
-    return undefined;
-  }
-}
-
-/** Introduces the prompt under a coverage refusal, so the agent knows it is for itself. */
-export const MSG_GATE_PROMPT_LEAD = 'To unlock it, do this (or hand it to your coding agent):';
-
-/**
- * Why the Harness must not drive this tab's app yet, or undefined when it may: below the coverage
- * gate (core's `instrumentation-coverage.ts`), one reason sentence and the prompt that closes it. Every Harness
- * start passes here (an agent's explore, Run Harness, `reticle try`, the platform's chat), so the
- * gate holds wherever a drive starts; every other tool works at any coverage. A tab that cannot be
- * resolved is not refused here: the drive itself answers for a missing tab. Counted once per refusal.
- */
-export function coverageRefusal(deps: ToolDeps, sessionId: string | undefined): string | undefined {
-  const refused = localGateRefusal(deps, sessionId);
-  if (refused !== undefined) getSessionMetrics().recordHarnessRefused(refused.percent);
-  return refused?.text;
-}
-
-/** This tab and every other live tab of its app, or undefined when the tab cannot be resolved. */
-function appTabsOf(deps: ToolDeps, sessionId: string | undefined) {
-  let tab: ReturnType<ToolDeps['sessions']['resolve']>;
-  try {
-    tab = deps.sessions.resolve(sessionId);
-  } catch {
-    return undefined;
-  }
-  // Every tab of the app, the way the platform's merged report reads it, so the two name the same
-  // missing items.
-  const siblings = (deps.sessions.list?.() ?? [])
-    .filter((info) => info.sessionId !== tab.id && sameApp(info.projectId, tab.projectId))
-    .flatMap((info) => {
-      const live = deps.sessions.get?.(info.sessionId);
-      return live === undefined ? [] : [live];
-    });
-  return { tab, siblings };
-}
-
-/** The daemon's own reading of the gate for this tab's app, uncounted. */
-function localGateRefusal(
-  deps: ToolDeps,
-  sessionId: string | undefined,
-): { text: string; percent: number } | undefined {
-  const app = appTabsOf(deps, sessionId);
-  if (app === undefined) return undefined;
-  const { tab } = app;
-  const siblings = app.siblings.map((live) => ({
-    id: live.id,
-    url: live.url,
-    projectId: live.projectId,
-    channels: live.channels,
-    sourceMapping: live.sourceMapping,
-  }));
-  const coverage = instrumentationOf(tab, siblings);
-  const gate = coverage.harnessGate;
-  if (gate.unlocked || gate.reason === undefined) return undefined;
-  const text =
-    coverage.prompt === undefined
-      ? gate.reason
-      : `${gate.reason}\n\n${MSG_GATE_PROMPT_LEAD}\n${coverage.prompt}`;
-  return { text, percent: gate.percent };
-}
-
-/**
- * The gate a Harness start obeys. When the project is linked, the platform's verdict is the one
- * source of truth: it locks a run mid-drive on the same report, so a daemon that refused what the
- * platform unlocked showed two scores for one project. The daemon's own reading only refuses when
- * the platform said nothing (not linked, unreachable, an older API) or said locked too, in which
- * case the daemon's sentence names what this tab can fix.
- */
-export async function harnessLockRefusal(
-  deps: ToolDeps,
-  sessionId: string | undefined,
-  env: Record<string, string | undefined>,
-  fetchConfig?: ConfigFetch,
-): Promise<string | undefined> {
-  // What the app's pages carry decides, not what an act happened to reach: ask them first.
-  const app = appTabsOf(deps, sessionId);
-  // Learned something: the platform hears it before it is asked, or it refuses on its old score.
-  if (app !== undefined && (await probeMarkers([app.tab, ...app.siblings])))
-    await reportAppsNow().catch(() => undefined);
-  if (undefined === localGateRefusal(deps, sessionId)) return undefined;
-  const platform = await fetchPlatformConfig(env, fetchConfig);
-  if (true === platform?.gate?.unlocked) return undefined;
-  return coverageRefusal(deps, sessionId);
-}
-
-/** Two tabs are one app when both name the same project. A tab that names none stands alone. */
-const sameApp = (a: string | undefined, b: string | undefined): boolean =>
-  a !== undefined && a === b;
-
-/**
- * Can this machine reach the Harness? Only through the platform: a linked project or a platform
- * key. Whether the workspace is entitled is the platform's answer, asked when the drive starts.
- */
-export function harnessAvailable(env: Record<string, string | undefined>): boolean {
-  return serverOptionsFromEnv(env) !== undefined;
-}
 
 /**
  * Read the step ceiling out of the environment.
@@ -458,6 +293,11 @@ export async function exploreApp(
       planAsText(driving),
       ...(options.focus === undefined ? [] : [`Focus: ${options.focus}`]),
     ].join('\n\n'),
+    // The end the caller's words quote stops the drive once it shows: see HarnessOptions.endsAt.
+    ...((end) =>
+      end === undefined || options.focus === undefined
+        ? {}
+        : { endsAt: { text: end, own: [options.focus] } })(endOf(options.focus ?? '')),
   });
 
   // Before the session ends and is graded: a drive whose goal was missed, or that was cut off part-way,
@@ -570,7 +410,13 @@ function planUrlFor(
     const dashboard = readDashboardUrl(root);
     return dashboard === undefined
       ? {}
-      : { planUrl: dashboardPlanUrl(dashboard, planId, readLinkedProjectId(root)) };
+      : {
+          planUrl: dashboardPlanUrl({
+            dashboardUrl: dashboard,
+            planId,
+            projectId: readLinkedProjectId(root),
+          }),
+        };
   } catch {
     return {};
   }
@@ -712,32 +558,6 @@ export function reconcileFlows(
 }
 
 /**
- * What a person said about autonomous driving on the platform, honoured here.
- *
- * The switch existed, persisted and round-tripped, and the daemon read it and threw it away — so
- * turning the harness OFF changed a value in a database and nothing else. A control that does not
- * control anything is worse than no control: somebody turns it off, watches Reticle drive their app
- * anyway, and now correctly distrusts every other switch in the product.
- *
- * Absent means OFF. The Harness is opt-in: a new project starts with it off, and an answer that does
- * not say it is on is not a yes to spend credits on.
- */
-export const MSG_HARNESS_DISABLED =
-  "The Reticle Harness is off for this project. The user can switch it on in the HUD's Settings " +
-  'or the Reticle dashboard (Settings → Projects → Reticle Harness on <project>); until then, drive the app yourself ' +
-  'through the MCP tools.';
-
-/**
- * The other reason a drive can be refused, and it is NOT the same reason.
- *
- * A drive through the platform spends Reticle's model budget, bounded by the workspace's Harness
- * credits. The platform answers this only when something other than the switch stops it.
- */
-export const MSG_HARNESS_UNCLAIMED =
-  'The Reticle platform says this workspace cannot drive the Harness right now, usually because its ' +
-  'credits are spent: see Settings → Plan in the Reticle dashboard.';
-
-/**
  * Why a drive must not be replayed into a verdict, or undefined when it may. A drive the platform
  * cut off (credits gone: 402 needs_card) had saved one partial flow, and replaying it printed PASS
  * with no word about the credits. The one test both CLI explore paths answer through.
@@ -757,80 +577,6 @@ export function cutOffReason(drive: { stopReason?: unknown; error?: unknown }): 
 /** The Agent Log's last line for a drive the platform cut off: its reason, and that it proved nothing. */
 export const msgDriveCutOff = (error: string | undefined): string =>
   `Harness stopped before it finished, so nothing is proved: ${error ?? 'the drive broke.'}`;
-
-/** The platform could not be asked, and the drive would spend Reticle's budget without its yes. */
-export const MSG_HARNESS_UNCONFIRMED =
-  'Could not confirm Harness access with the Reticle platform, so the drive did not start. Try ' +
-  'again in a moment.';
-
-/** One read, however many questions are asked of the answer. */
-function platformConfig(env: Record<string, string | undefined>, options: ExploreOptions) {
-  return options.configFetch === undefined
-    ? fetchPlatformConfig(env)
-    : fetchPlatformConfig(env, options.configFetch);
-}
-
-/**
- * The reason this drive must not start, or `undefined` to go ahead.
- *
- * A drive on somebody's OWN model key never waits on the platform beyond the off switch: their key,
- * their spend. A drive through the platform proxy bills Reticle, and that one needs a confirmed yes
- * — enabled, entitled, and a model ready. It used to fail open: `fetchPlatformConfig` answers
- * `undefined` on a network error, a non-2xx, a body that does not parse, or a two-second timeout,
- * and all four read as "carry on", so a slow second on a settings endpoint let an unentitled
- * workspace drive on Reticle's budget. Now the same silence refuses with a message that says to
- * retry or bring a key. Fields an older platform omits still default to yes inside
- * `fetchPlatformConfig`; only an answer that never arrived is a no.
- */
-export async function refusedByPlatform(
-  env: Record<string, string | undefined>,
-  options: ExploreOptions,
-): Promise<string | undefined> {
-  if (true === options.skipPlatformConfig) return undefined;
-  // No platform, no Harness: it runs there, on the workspace's credits.
-  if (serverOptionsFromEnv(env) === undefined) return MSG_NO_HARNESS_KEY;
-  const config = await platformConfig(env, options);
-  // It needs a confirmed yes, not the absence of a no. The platform also checks on every turn.
-  if (config === undefined) return MSG_HARNESS_UNCONFIRMED;
-  // The project-wide lock before the switch: a fresh tab passes the per-tab gate with no gaps
-  // recorded, and "off" hid the one refusal that names its fix.
-  const gate = config.gate;
-  if (false === gate?.unlocked && gate.reason !== undefined)
-    return gate.prompt === undefined
-      ? gate.reason
-      : `${gate.reason}\n\n${MSG_GATE_PROMPT_LEAD}\n${gate.prompt}`;
-  if (!config.harnessEnabled) return MSG_HARNESS_DISABLED;
-  // Before entitlement: no credits left is why most workspaces are not entitled, said as the HUD says it.
-  if (config.credits !== undefined && creditsSpent(config.credits))
-    return creditsUsedLine(
-      config.credits,
-      // The platform's own page; built from the API origin only for a platform that names none.
-      config.planUrl ?? planUrl(config.platformUrl ?? cloudUrlFrom(env) ?? ''),
-    );
-  if (!config.harnessEntitled) return MSG_HARNESS_UNCLAIMED;
-  return undefined;
-}
-
-/**
- * `refusedByPlatform`, for a run that may be a saved plan. A plan that only replays saved flows
- * spends no model turn, so a model drive's gates do not stop it; a refused plan is still reported to
- * the plan, every journey blocked with the reason, so its history records the attempt.
- */
-async function refusedForPlan(
-  env: Record<string, string | undefined>,
-  options: ExploreOptions,
-): Promise<string | undefined> {
-  const planId = options.planId;
-  const platform = serverOptionsFromEnv(env);
-  if (planId === undefined || platform === undefined) return refusedByPlatform(env, options);
-  if (await savedPlanDrivesNothing(platform, planId)) return undefined;
-  const refusal = await refusedByPlatform(env, options);
-  if (refusal !== undefined) await reportPlanBlocked(platform, planId, firstLine(refusal));
-  return refusal;
-}
-
-/** The sentence a refusal leads with, without the prompt that follows it. */
-export const firstLine = (text: string): string => text.split('\n')[0] ?? text;
 
 /**
  * Close and save whatever recording the drive left open.

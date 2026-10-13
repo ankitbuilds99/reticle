@@ -12,6 +12,7 @@ import { ReticleTool } from '@reticlehq/core';
 import { sessionIdShape } from '@/surface/tools/tool-kit.js';
 import { asString } from '@reticlehq/core';
 import type { ToolDef } from '@/surface/tools/tool-kit.js';
+import { releaseLease } from '@/surface/tools/lease-tools.js';
 import type { Session } from './session.js';
 import type { SessionManager } from './session-manager.js';
 import { gapReportLines } from '@/judgement/runs/artifact/gap-report.js';
@@ -107,7 +108,8 @@ export const LIVE_CONTROL_TOOLS: ToolDef[] = [
       '(calm, terminal) and shows the optional `summary` on the panel. If you are just finishing a ' +
       'turn or waiting on the human, call reticle_session{action:"yield"} instead (revivable). Idempotent. ' +
       "With `disconnect: true` and a `sessionId` it also closes that page's connection and refuses it " +
-      'until the daemon restarts — for a stray window (a hidden desktop webview, a 404 page) that keeps coming back.',
+      'until the daemon restarts — for a stray window (a hidden desktop webview, a 404 page) that keeps coming back. ' +
+      'Ending a tab you leased also releases that lease (`leaseReleased: true`).',
     inputSchema: {
       summary: z.string().optional(),
       claim: z
@@ -128,6 +130,12 @@ export const LIVE_CONTROL_TOOLS: ToolDef[] = [
       ended: z.boolean(),
       sessionId: z.string().optional(),
       disconnected: z.boolean().optional(),
+      leaseReleased: z
+        .boolean()
+        .optional()
+        .describe(
+          'True when the ended tab was your lease: its context is closed and its slot freed.',
+        ),
       note: z.string().optional(),
       talk_to_us: z
         .string()
@@ -187,7 +195,7 @@ export const LIVE_CONTROL_TOOLS: ToolDef[] = [
       const summary = asString(args['summary']);
       // A verdict still being decided (an assert waiting out its budget) is one of this session's
       // checks: decided and journaled before the session's result is folded, never after it.
-      return settledJournal(session).then((all) => {
+      return settledJournal(session).then(async (all) => {
         // This agent session only: its own calls since its last end, never the Harness drives the
         // tab also holds, and under its own run id so a later end does not overwrite this run.
         const ended = endedAgentSession(session.id, all, session.elapsed?.(), claim);
@@ -199,7 +207,7 @@ export const LIVE_CONTROL_TOOLS: ToolDef[] = [
         // One PRESENTER push for the transition; the summary and the gap headline ride together.
         session.setState(SessionState.ENDED, 0 === panel.length ? undefined : panel.join('\n'));
         if (detach) deps.sessions.park(session);
-        return {
+        const answer = {
           ended: true,
           sessionId: session.id,
           ...(detach ? { disconnected: true } : {}),
@@ -209,6 +217,13 @@ export const LIVE_CONTROL_TOOLS: ToolDef[] = [
           ...(claim === undefined ? {} : { claim: claimAgainstGrade(claim, actions) }),
           ...resultField(() => sessionResult(deps, session.id, actions, ended.wallMs, ended.runId)),
         };
+        // An ended lease left connected kept the tab registered until the reaper took it, so the
+        // next agent's every id-less call was refused as ambiguous. Released after the answer is
+        // folded, because releasing closes the tab. Only this caller's own lease, never another's.
+        const pool = deps.pool;
+        if (pool === undefined || !pool.heldBy(session.id, deps.attachId)) return answer;
+        await releaseLease(deps, pool, session.id);
+        return { ...answer, leaseReleased: true };
       });
     },
   },

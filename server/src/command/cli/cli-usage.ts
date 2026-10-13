@@ -224,7 +224,8 @@ const COMMANDS: readonly CommandDoc[] = [
   },
   {
     name: 'mcp',
-    synopsis: 'mcp [--port N] [--drive <url>] [--headless]',
+    synopsis:
+      'mcp [--port N] [--drive <url>] [--headless] [--headed] [--http] [--http-port N] [--http-token T]',
     summary: 'The MCP stdio server your agent runs; starts the daemon if needed',
     group: HelpGroup.MORE,
     detail: BROWSER_NOTE,
@@ -232,14 +233,14 @@ const COMMANDS: readonly CommandDoc[] = [
   {
     name: 'serve',
     synopsis:
-      'serve [--port N] [--drive <url>] [--headless] [--http] [--http-port N] [--http-token T]',
+      'serve [--port N] [--drive <url>] [--headless] [--headed] [--http] [--http-port N] [--http-token T]',
     summary: 'Start the daemon in the background; returns once it answers',
     group: HelpGroup.MORE,
     detail: BROWSER_NOTE,
   },
   {
     name: 'drive',
-    synopsis: 'drive <url> [--headless]',
+    synopsis: 'drive <url> [--headless] [--headed]',
     summary: 'Open a URL in the foreground, for debugging',
     group: HelpGroup.MORE,
   },

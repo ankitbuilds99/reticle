@@ -6,11 +6,12 @@
  * run-setup.ts and the pieces it calls.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { planAgentConfigs, type PlatformPaths } from './agent-configs.js';
 import { AppShape, describeShape, readShape } from './desktop-shape.js';
+import { SigningEnv, tauriSigningEnv } from './tauri-signing.js';
 import { stopOnInterrupt } from './terminal/interrupt.js';
 import { stopOnCrash, crashSentence } from './terminal/crash.js';
 import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
@@ -337,7 +338,31 @@ export async function runSetupCommand(
   const effects: SetupEffects = {
     startDevServer: (command, cwd) => {
       print(`starting: ${command}`);
-      server.start(command, cwd, input.env);
+      const signing =
+        AppShape.TAURI === shape
+          ? tauriSigningEnv({
+              platform: process.platform,
+              env: { ...process.env, ...input.env },
+              read: (path) => {
+                try {
+                  return readFileSync(join(cwd, path), 'utf8');
+                } catch {
+                  return undefined;
+                }
+              },
+              writeRunner: (name, script) => {
+                const path = join(reticleStateHome(), name);
+                writeFileSync(path, script);
+                chmodSync(path, 0o755);
+                return path;
+              },
+            })
+          : {};
+      if (SigningEnv.IDENTITY in signing)
+        print(
+          `signing the dev build as ${String(signing[SigningEnv.IDENTITY])}, so macOS does not ask for the keychain password`,
+        );
+      server.start(command, cwd, { ...input.env, ...signing });
       return Promise.resolve();
     },
     // The server the plugin announced (Vite), or failing that the one a previous init handed over

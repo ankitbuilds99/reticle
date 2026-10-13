@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PlatformRefusalCode, refusalSentence } from '@/features/harness/platform/refusal.js';
 import { RefusalReason, TRANSPORT_LIMITS, unissuedRefRefusal } from '@reticlehq/core';
 import {
   FEEDBACK_ASK,
@@ -95,15 +96,24 @@ describe('recoveryFor — every known error carries an actionable next move', ()
         'Harness unlocks at 80% instrumentation. This app is at 62%: missing stable test ids.',
       ),
     ).toBe(RECOVERY.HARNESS_LOCKED);
-    // A re-drive: the platform's "locked" answer came back asking for a bug report.
-    expect(
-      recoveryFor('Reticle Harness is locked. Connect your app first, then run it again.'),
-    ).toBe(RECOVERY.HARNESS_LOCKED);
-    expect(
-      recoveryFor(
-        'This workspace has no harness entitlement, so autonomous driving would run on Reticle\u2019s model budget.',
-      ),
-    ).toBe(RECOVERY.HARNESS_OFF);
+    // The platform's lock arrives with its code, and the code — never the wording — is the contract.
+    // Driven over MCP: the platform reworded it ("Harness is locked. Setup score: …") and a regex on
+    // its old words answered every locked Harness with "may be a defect in Reticle".
+    for (const words of [
+      'Reticle Harness is locked. Connect your app first, then run it again.',
+      'Harness is locked. Setup score: 75%. Harness needs 80%. Missing: File and line.',
+      'Any wording the platform chooses tomorrow.',
+    ])
+      expect(
+        recoveryFor(
+          refusalSentence({ code: PlatformRefusalCode.HARNESS_LOCKED, message: words }, 403),
+        ),
+      ).toBe(RECOVERY.HARNESS_LOCKED);
+    // The off switch and a spent card wall the same way: by code.
+    for (const code of [PlatformRefusalCode.HARNESS_OFF, PlatformRefusalCode.NEEDS_CARD])
+      expect(recoveryFor(refusalSentence({ code, message: 'whatever it says' }, 402))).toBe(
+        RECOVERY.HARNESS_OFF,
+      );
   });
 
   it('answers an unlinked explore with "link it or drive it yourself", not "your call was invalid"', () => {

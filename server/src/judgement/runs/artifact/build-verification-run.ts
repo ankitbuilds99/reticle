@@ -18,6 +18,7 @@ import {
   type RunVerdict,
 } from '@reticlehq/core';
 import { redactForProfile } from './profile-redact.js';
+import { supersededChecks } from '@reticlehq/engine/evidence/superseded-checks.js';
 
 /**
  * Everything a caller supplies; schemaVersion/createdAt/verdict are filled/computed by the builder.
@@ -39,7 +40,18 @@ export type VerificationRunInput = Omit<
  * reason those two values now survive into the artifact instead of being dropped at its door.
  * Confidence: nothing ran → LOW; an oracle-backed flow or any check ran → HIGH; only smoke → MEDIUM.
  */
-export function computeVerdict(input: VerificationRunInput): RunVerdict {
+export function computeVerdict(raw: VerificationRunInput): RunVerdict {
+  // A passive check that read too early is superseded by the same claim holding later: the one
+  // rule every fold applies (superseded-checks.ts).
+  const superseded = supersededChecks(
+    raw.checks.map((c) => ({
+      key: c.predicate,
+      passive: false === c.declaredBeforeActing,
+      held: Verified.YES === c.status,
+      failed: Verified.NO === c.status,
+    })),
+  );
+  const input = { ...raw, checks: raw.checks.filter((_, at) => !superseded.has(at)) };
   const passes =
     input.flows.filter((f) => f.status === RunFlowStatus.PASS || f.status === RunFlowStatus.HEALED)
       .length + input.checks.filter((c) => c.status === Verified.YES).length;
@@ -74,7 +86,9 @@ export function computeVerdict(input: VerificationRunInput): RunVerdict {
 
   let status: VerdictStatus;
   if (blockingRisks > 0) status = VerdictStatus.FAIL;
-  else if (fails > 0 && passes > 0) status = VerdictStatus.PARTIAL;
+  // A failure beside things that passed is a fail, not a partial: the result block, the CLI and the
+  // platform's grade all call it that, and a "partial" beside "Reticle result: failed" was one run
+  // with two verdicts. A partial is only ever a pass with something skipped or undecided beside it.
   else if (fails > 0) status = VerdictStatus.FAIL;
   else if ((skippedFlows > 0 || undecidedChecks > 0) && passes > 0) {
     status = VerdictStatus.PARTIAL;

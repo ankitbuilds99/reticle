@@ -75,7 +75,7 @@ import {
   reportPlanResults,
   type JourneyResult,
 } from '@/features/harness/platform/script.js';
-import { goalOfDrive, parseGoals, readOpening } from '@/features/harness/goals.js';
+import { endOf, goalOfDrive, parseGoals, readOpening } from '@/features/harness/goals.js';
 import {
   bestOfLanes,
   huntAndGrade,
@@ -358,6 +358,7 @@ async function runPlan(
         maxSteps: Math.min(steps, maxSteps),
         routes: knownRoutes(map),
         focus: [planAsText(planFor(goal)), `Focus: ${goal}`].join('\n\n'),
+        ...((end) => (end === undefined ? {} : { endsAt: { text: end, own } }))(endOf(goal)),
       });
       // The driver's word, unless the lane did nothing: then its goal was not met by it.
       const laneGoal = goalOfDrive(driven.goalMet, [], actedOnApp(driven.toolCalls));

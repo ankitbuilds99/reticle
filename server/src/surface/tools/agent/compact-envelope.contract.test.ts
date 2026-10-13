@@ -105,7 +105,9 @@ function fullResult(r: Rand): Record<string, unknown> {
       requests: maybe(r, ['POST /api/login 200']),
       statePathsChanged: ['app'],
       storageKeysChanged: maybe(r, ['token']),
-      stateDiffs: [{ path: 'auth', from: null, to: '{"email":"a"}', atMs: 4 }],
+      // Sometimes empty, so some verdicts changed nothing and carry no `changed` line: the branch
+      // where the whole blast radius has to survive compaction.
+      stateDiffs: pick(r, [[{ path: 'auth', from: null, to: '{"email":"a"}', atMs: 4 }], []]),
       storageDiffs: [],
       route: maybe(r, '/dashboard'),
       signals: maybe(r, ['auth:granted']),
@@ -291,9 +293,15 @@ describe('compact envelope: decisive-evidence contract', () => {
         want['freshGaps'] = undefined;
       if (Array.isArray(want['undeclaredRequests']) && 0 === want['undeclaredRequests'].length)
         want['undeclaredRequests'] = undefined;
-      // A green's undeclared requests are kept only beside a `changed` line; without one the whole
-      // blast radius stays.
-      if (compact['changed'] === undefined) got['undeclaredRequests'] = want['undeclaredRequests'];
+      // Beside a `changed` line only the undeclared requests are kept; without one the whole blast
+      // radius stays, so read its requests out of what the compact result actually carries.
+      if (compact['changed'] === undefined) {
+        expect(compact['blastRadius'], `seed ${String(seed)}`).toEqual(full['blastRadius']);
+        const kept = Array.isArray(compact['blastRadius'])
+          ? compact['blastRadius'].filter((b) => String(b).startsWith('net '))
+          : [];
+        got['undeclaredRequests'] = 0 === kept.length ? undefined : kept;
+      }
       expect(got, `seed ${String(seed)}`).toEqual(want);
     }
   });

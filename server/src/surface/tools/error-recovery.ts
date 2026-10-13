@@ -11,6 +11,13 @@
 
 import { RefusalReason, ReticleEnv, TRANSPORT_LIMITS, UNISSUED_REF_REFUSAL } from '@reticlehq/core';
 import { SELF_RECOVERING_MARKER } from '@/portal/session/no-session-diagnosis.js';
+import {
+  MSG_HARNESS_DISABLED,
+  MSG_HARNESS_UNCLAIMED,
+  MSG_HARNESS_UNCONFIRMED,
+  PlatformRefusalCode,
+  RefusalLead,
+} from '@/features/harness/platform/refusal.js';
 import { BODY_CLAUSE_REFUSAL_OPENING } from '@reticlehq/engine/evidence/body-capture-remedy.js';
 import {
   CHROMIUM_PATH_REFUSAL_PREFIX,
@@ -359,6 +366,11 @@ const REASON_BY_HINT: ReadonlyMap<string, RefusalReason> = new Map(
 );
 
 /** Ordered match rules; the first hit wins. Substrings track the thrown messages they recover. */
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Matches a message that opens with any of these sentences (their first sentence, as said). */
+const startsWithAny = (sentences: readonly string[]): RegExp =>
+  new RegExp(`^(?:${sentences.map((s) => escapeRegExp(s.split('. ')[0] ?? s)).join('|')})`);
+
 const RULES: readonly { readonly match: RegExp; readonly hint: string }[] = [
   // First, because the message carries a path the user chose, and a path can hold any word a later
   // rule keys on. Without it the variable's name read as a `reticle_*` tool and the agent was told
@@ -375,13 +387,23 @@ const RULES: readonly { readonly match: RegExp; readonly hint: string }[] = [
   {
     // Credits spent, not entitled, or the platform not answering: deliberate refusals, each naming
     // its own way out, never "may be a defect in Reticle".
-    match:
-      /The Reticle Harness is off for this project|no harness entitlement|credits are used\.|cannot drive the Harness right now|Could not confirm Harness access/i,
+    match: startsWithAny([
+      RefusalLead[PlatformRefusalCode.HARNESS_OFF],
+      RefusalLead[PlatformRefusalCode.NEEDS_CARD],
+      MSG_HARNESS_DISABLED,
+      MSG_HARNESS_UNCLAIMED,
+      MSG_HARNESS_UNCONFIRMED,
+    ]),
     hint: RECOVERY.HARNESS_OFF,
   },
+  // A credits sentence is core's own wording (core/src/artifacts/harness-credits.ts), not the
+  // platform's: matching it is matching ourselves.
+  { match: /credits are used\./, hint: RECOVERY.HARNESS_OFF },
   {
     // The gate's own words, and the platform's "locked: connect your app first": expected states.
-    match: /(?:^Harness unlocks at \d+% instrumentation)|(?:Reticle Harness is locked\b)/,
+    match: new RegExp(
+      `(?:^Harness unlocks at \\d+% instrumentation)|(?:^${escapeRegExp(RefusalLead[PlatformRefusalCode.HARNESS_LOCKED])})`,
+    ),
     hint: RECOVERY.HARNESS_LOCKED,
   },
   { match: /The Reticle Harness runs on the Reticle platform/, hint: RECOVERY.HARNESS_NOT_LINKED },

@@ -109,8 +109,8 @@ describe('replayFlow dynamic-region skip', () => {
     );
     expect(steps[0]?.ok).toBe(false);
     expect(steps[0]?.drift?.anchor).toBe('caption-text');
-    // nearest computed from present testids
-    expect(steps[0]?.drift?.nearest).not.toBeNull();
+    // Nothing present looks like a rename of it, so no survivor is offered as the fix.
+    expect(steps[0]?.drift?.nearest).toBeNull();
   });
 
   it('the dynamic skip does NOT stop the step action from running', async () => {

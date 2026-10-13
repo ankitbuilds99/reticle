@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { VACUOUS_BECAUSE } from '@reticlehq/engine/evidence/verified.js';
 import { SessionState, UNSCRIPTABLE_TAB_RECOMMENDATION, TRANSPORT_LIMITS } from '@reticlehq/core';
 import { TOOLS, MERGED_TOOLS, type ToolDef, type ToolDeps } from './tools.js';
-import { DiscoveryInvite, ReticleTool } from '@reticlehq/core';
+import { ReticleTool } from '@reticlehq/core';
 import { EnvelopeKey } from './tool-kit.js';
 import { getSessionMetrics, resetSessionMetrics } from '@/telemetry/session-metrics.js';
 import { buildDynamicTools } from './dynamic-tools.js';
@@ -361,6 +362,44 @@ describe('an argument larger than the transport allows is refused, not run', () 
 });
 
 /**
+ * A verdict on a leased tab tells the agent WHICH TAB answered, so a fact that changes what the
+ * verdict is about has to ride with it. A tab opened with `initScript` runs a STUB of the bindings a
+ * desktop shell injects: its view reached the data path because Reticle faked the shell, and a green
+ * there is not evidence about the real shell. Without the note, the agent cannot tell the two apart.
+ */
+describe('a leased tab running a stubbed shell', () => {
+  function depsWithStub(stubbed: boolean): ToolDeps {
+    const deps = fakeDeps();
+    (deps as { pool?: { touch(id: string): void; stubInstalled(id: string): boolean } }).pool = {
+      touch: () => undefined,
+      stubInstalled: () => stubbed,
+    };
+    return deps;
+  }
+
+  it('carries the stub note on a session-bound result, a verdict included', async () => {
+    const r = (await runTool(
+      stubTool(ReticleTool.ASSERT, { verified: 'yes' }),
+      depsWithStub(true),
+      {},
+    )) as Record<string, unknown>;
+
+    expect(String(r[EnvelopeKey.HOST_STUB])).toMatch(/stub/i);
+    expect(String(r[EnvelopeKey.HOST_STUB])).toMatch(/real shell/i);
+  });
+
+  it('says nothing when the lease was opened without a stub', async () => {
+    const r = (await runTool(
+      stubTool(ReticleTool.ASSERT, { verified: 'yes' }),
+      depsWithStub(false),
+      {},
+    )) as Record<string, unknown>;
+
+    expect(r[EnvelopeKey.HOST_STUB]).toBeUndefined();
+  });
+});
+
+/**
  * `feedbackPrompted` is the denominator that says whether inviting mid-task works or is decoration,
  * and it read as near-empty on almost every session. It was not unset and not unserialised: the
  * count sat BELOW the session-bound early return, behind two conditions that between them exclude
@@ -398,7 +437,25 @@ describe('the feedback invitation is counted wherever friction actually happens'
     const result = (await runTool(exempt, fakeDeps(), {})) as Record<string, unknown>;
     expect(result[EnvelopeKey.FEEDBACK_INVITE]).toBeDefined();
     expect(result[EnvelopeKey.TALK_TO_US]).toBeUndefined();
-    expect(DiscoveryInvite.AGENT).toBeDefined();
+  });
+
+  // Driven over MCP: a bare `settled` wait, which the instructions recommend, is `unknown` because
+  // the caller asserted nothing real — and was answered "an unknown verdict is our defect".
+  it('does not invite on an unknown the caller made by asserting nothing real', async () => {
+    const vacuous: ToolDef = {
+      name: ReticleTool.FLOW_VERIFY,
+      description: '',
+      inputSchema: {},
+      handler: () => Promise.resolve({ verified: 'unknown', because: VACUOUS_BECAUSE }),
+    };
+    const result = (await runTool(vacuous, fakeDeps(), {})) as Record<string, unknown>;
+    expect(result[EnvelopeKey.FEEDBACK_INVITE]).toBeUndefined();
+    const undecided: ToolDef = {
+      ...vacuous,
+      handler: () => Promise.resolve({ verified: 'unknown', because: 'the capture was not clean' }),
+    };
+    const asked = (await runTool(undecided, fakeDeps(), {})) as Record<string, unknown>;
+    expect(asked[EnvelopeKey.FEEDBACK_INVITE]).toBeDefined();
   });
 
   it('does not offer it on a call that went fine', async () => {

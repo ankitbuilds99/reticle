@@ -1,9 +1,6 @@
 import {
   ContradictionKind,
   EventType,
-  NEXT_ACTION_FIELD,
-  PredicateKind,
-  REQUEST_SHAPE_FIELD,
   isAbsenceDerived,
   isSameDocument,
   isSameEditEpoch,
@@ -11,15 +8,21 @@ import {
 } from '@reticlehq/core';
 import { describeSuperseded } from '@/question/predicate/observed-in-window.js';
 import {
+  declareFailureHint,
   describe,
+  groupByIdentity,
+  identityOf,
   isMutating,
   isSameDocumentHashAnchor,
   isSamePathnameReplace,
   isSteadyCadence,
   netCall,
+  pageNumber,
+  pageRequest,
   recoveredByRetry,
   splitForeignTraffic,
   type NetCall,
+  type WriteIdentity,
 } from './contradiction-evidence.js';
 import { findStaleResponses } from './stale-response.js';
 import { findBodyFailures } from './body-failures.js';
@@ -28,6 +31,7 @@ import { findUnitMismatches } from './unit-mismatch.js';
 import { asString } from '@reticlehq/core';
 import { isDeclaredRead, matchesDeclaredFailure } from '@/question/declared.js';
 import { runRegisteredFolds } from './contradiction-folds.js';
+import { isMeaningfulStateChange } from '../state-bookkeeping.js';
 import type {
   Contradiction,
   OwnContradiction,
@@ -50,60 +54,6 @@ export type {
  *
  * Pure: a window of events in, findings out. No session, no IO, no clock.
  */
-
-/**
- * What this request CARRIED, as far as the record knows — `undefined` when it does not know.
- *
- * The page's shape fingerprint first: it is present on every request from an instrumented page,
- * including the overwhelming majority where body capture is off. A captured body is the fallback for
- * a realm that records one without a fingerprint (desktop IPC). Neither means the record does not
- * say what this request carried — a body the page could not read as text, or an SDK too old to
- * compute a fingerprint — and that is an ABSENCE of identity, not an identity shared with every
- * other silent request.
- *
- * A Server Action's action id joins both halves, and it is the half that survives a `FormData`
- * body: several actions POST to the page's own URL, so without it every call is an unknown identity
- * pooled with all the others, and no fingerprint can separate two that share a shape. The id alone
- * SPLITS two different actions; it cannot say that two runs of one action carried the same thing,
- * and `carried` keeps that limit on the record for the finding to say.
- */
-interface WriteIdentity {
-  /** The value the grouping compares. */
-  readonly key: string;
-  /** Whether the key also describes WHAT the request carried, not only which action ran. */
-  readonly carried: boolean;
-}
-
-function identityOf(event: ReticleEvent): WriteIdentity | undefined {
-  const action = asString(event.data[NEXT_ACTION_FIELD]);
-  const shape = asString(event.data[REQUEST_SHAPE_FIELD]);
-  const body = asString(event.data['requestBody']);
-  const carried =
-    shape !== undefined && 0 !== shape.length
-      ? shape
-      : body === undefined || 0 === body.length
-        ? undefined
-        : body;
-  if (action === undefined || 0 === action.length) {
-    return carried === undefined ? undefined : { key: carried, carried: true };
-  }
-  return carried === undefined
-    ? { key: action, carried: false }
-    : { key: `${action}:${carried}`, carried: true };
-}
-
-/** Split calls to one endpoint into the sets that sent the same thing. Callers check first that
- * every identity is known; an unknown one would otherwise pool with every other unknown. */
-function groupByIdentity<T extends { identity: WriteIdentity | undefined }>(
-  calls: readonly T[],
-): T[][] {
-  const byIdentity = new Map<string, T[]>();
-  for (const call of calls) {
-    const key = call.identity?.key ?? '';
-    byIdentity.set(key, [...(byIdentity.get(key) ?? []), call]);
-  }
-  return [...byIdentity.values()];
-}
 
 function uiAdvanced(events: readonly ReticleEvent[]): boolean {
   return events.some(
@@ -632,7 +582,7 @@ function findWindowContradictions(
   // failed call in it, and both were already answered by the rule that owns that fact.
   if (
     options.actionSince !== undefined &&
-    events.some((e) => e.type === EventType.STATE_CHANGE) &&
+    events.some(isMeaningfulStateChange) &&
     !events.some((e) => e.type === EventType.NET_REQUEST || e.type === EventType.NET_PENDING) &&
     !events.some(
       (e) =>
@@ -849,61 +799,6 @@ function findWindowContradictions(
   return [...found, ...runRegisteredFolds(events, options)];
 }
 
-/**
- * The `net` clause that declares each of these failures, worded as a condition.
- *
- * A designed error path (a 402 paywall, a 429, a 428 confirmation) asserted through the UI it renders
- * gets `ui-advanced-request-failed`, and declaring the failing call in the oracle is what exempts it
- * (`matchesDeclaredFailure`). Nothing in the finding said so, so agents dropped the check or
- * weakened it until it proved nothing (#1418). The clause is built from the call itself, so it is
- * exactly what would match, and it is conditional: the finding is still a finding, and a clause
- * pasted to make a red go away would be the same false green with extra steps.
- *
- * Built from the DISPLAY url, which is redacted, never from `matchUrl`, which is not: the detail is
- * copied into crawl anomalies, and a hint must not put back a token the description took out. A
- * call whose path cannot be named exactly and narrowly gets no clause rather than a loose one: a
- * bare `/` is a substring of every url and would exempt unrelated failures with the same method.
- */
-function declareFailureHint(
-  calls: readonly { method: string; url: string; matchUrl?: string; status: number | undefined }[],
-): string {
-  const clauses = calls.flatMap((c) => {
-    const urlContains = narrowPathOf(c);
-    if (urlContains === undefined) return [];
-    const clause = {
-      kind: PredicateKind.NET,
-      method: c.method.toUpperCase(),
-      urlContains,
-      ...(c.status === undefined || 0 === c.status ? { ok: false } : { status: c.status }),
-    };
-    return [JSON.stringify(clause)];
-  });
-  if (0 === clauses.length) return '';
-  const subject = 1 === clauses.length ? 'this failure is' : 'these failures are';
-  return `. If ${subject} the outcome you expect, declare it in the predicate: ${clauses.join(', ')}`;
-}
-
-/** Resolves a relative call url so its path can be read; the host is never shown or matched. */
-const RELATIVE_URL_BASE = 'http://reticle.invalid';
-
-/**
- * The display url's path, when it is both safe to show and narrow enough to declare one call.
- *
- * Only when it is literally in the url the declaration is matched against: `urlContains` is a
- * substring test, so a path the parser re-encoded, or one the redaction changed, would never match.
- */
-function narrowPathOf(call: { url: string; matchUrl?: string }): string | undefined {
-  let path: string;
-  try {
-    path = new URL(call.url, RELATIVE_URL_BASE).pathname;
-  } catch {
-    return undefined;
-  }
-  if (0 === path.replace(/\/+$/, '').length) return undefined;
-  if (!call.url.includes(path) || !(call.matchUrl ?? call.url).includes(path)) return undefined;
-  return path;
-}
-
 // ── Pagination ───────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -918,41 +813,6 @@ function narrowPathOf(call: { url: string; matchUrl?: string }): string | undefi
  * changing AND a GET to the same endpoint carrying the same page parameter the last one carried.
  * Client-side paging that fetches nothing is legitimate and stays silent.
  */
-
-/** Query parameters that say which page of a list is being asked for. */
-const PAGE_PARAMS = ['page', 'offset', 'cursor', 'after', 'start', 'skip', 'from'] as const;
-
-/** "Page 2", "page 2 of 6", "2 / 6", "2 of 6". */
-const PAGE_LABEL = /\bpage\s+(\d+)\b|\b(\d+)\s*(?:of|\/)\s*\d+\b/i;
-
-function pageNumber(text: unknown): number | undefined {
-  if ('string' !== typeof text) return undefined;
-  const match = PAGE_LABEL.exec(text);
-  const raw = match?.[1] ?? match?.[2];
-  return raw === undefined ? undefined : Number(raw);
-}
-
-/** The endpoint and its page parameter, for a GET that carries one. */
-function pageRequest(
-  event: ReticleEvent,
-): { path: string; param: string; value: string } | undefined {
-  if (event.type !== EventType.NET_REQUEST) return undefined;
-  const method = event.data['method'];
-  if ('string' !== typeof method || 'GET' !== method.toUpperCase()) return undefined;
-  const raw = event.data['url'];
-  if ('string' !== typeof raw) return undefined;
-  let url: URL;
-  try {
-    url = new URL(raw, 'http://app.invalid');
-  } catch {
-    return undefined;
-  }
-  for (const param of PAGE_PARAMS) {
-    const value = url.searchParams.get(param);
-    if (value !== null) return { path: url.pathname, param, value };
-  }
-  return undefined;
-}
 
 /**
  * @param prior events before the window: where the last page request to each endpoint is learned.

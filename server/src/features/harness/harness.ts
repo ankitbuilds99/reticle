@@ -21,6 +21,7 @@
 import { ReticleTool, Verified, asRecord } from '@reticlehq/core';
 import { claimsOnlyRoute, knownPagesLine, routeHint } from './route-guess.js';
 import { withTimeout } from './with-timeout.js';
+import { lookFor } from './goals.js';
 
 /** One tool as the model sees it. JSON Schema, because that is what the wire wants. */
 export interface HarnessTool {
@@ -268,7 +269,22 @@ export interface HarnessOptions {
   inbox?: () => readonly string[];
   /** The pages the app's map knows: named up front, and offered after a route guess misses. */
   routes?: readonly string[];
+  /**
+   * The end the goal quotes, and the text the Harness wrote itself (never the app showing it): the
+   * drive stops once a check has held and the page shows it. Driven over MCP: a model that reached
+   * "Generated script for" kept going, navigated to a start page that signs the app out, and ended
+   * on a page without the result — a working journey failed by its own wandering.
+   */
+  endsAt?: { readonly text: string; readonly own: readonly string[] };
 }
+
+/** Why a drive ended before the model said so. */
+const msgReachedEnd = (end: string): string =>
+  `Reached the end the goal names ("${end}") after a check held, so the drive stopped there.`;
+
+/** A check in this turn that came back yes: the moment worth looking for the end. */
+const heldCheck = (outcome: ToolOutcome): boolean =>
+  isProof(outcome) && Verified.YES === asRecord(outcome.result)['verified'];
 
 export const DEFAULT_MAX_STEPS = 40;
 
@@ -497,6 +513,22 @@ export async function runHarness(
     }
     toolCalls.push(...outcomes);
     history.push({ role: 'tool', outcomes });
+    const end = options.endsAt;
+    if (
+      end !== undefined &&
+      outcomes.some(heldCheck) &&
+      (await lookFor((name, args) => toolset.invoke(name, args), end.text, end.own))
+    ) {
+      return {
+        stopReason: StopReason.FINISHED,
+        summary: msgReachedEnd(end.text),
+        steps: step + 1,
+        toolCalls,
+        usage,
+        proved: proved(),
+        goalMet: true,
+      };
+    }
   }
 
   return {

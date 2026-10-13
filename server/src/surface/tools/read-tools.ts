@@ -140,6 +140,9 @@ export const READ_TOOLS: ToolDef[] = [
         .describe(
           'Baseline name to compare against. Call reticle_baseline{action:"list"} to get available names; names are created by reticle_baseline{action:"save"}.',
         ),
+      // Read below as an alias, so declared: a merged tool refuses a key its chosen action does not
+      // declare, and `name` is what the saving sibling calls the same thing (#1536).
+      name: z.string().optional().describe('Alias for `baseline`.'),
       ...sessionIdShape,
     },
     outputSchema: {
@@ -594,7 +597,22 @@ export const READ_TOOLS: ToolDef[] = [
       // Back-compat: an older browser returned the whole store; scope it here (may already be
       // size-truncated in transit for a very large store — that is the limitation this fix removes
       // for current SDKs).
-      const base = store !== undefined ? (root.stores ?? {})[store] : result;
+      const stores = root.stores;
+      const hasStore =
+        store !== undefined &&
+        'object' === typeof stores &&
+        stores !== null &&
+        Object.prototype.hasOwnProperty.call(stores, store);
+      if (store !== undefined && path === undefined && !hasStore) {
+        return {
+          store,
+          found: false,
+          value: null,
+          availableKeys: names,
+          storeNames: names,
+        };
+      }
+      const base = store !== undefined ? (stores ?? {})[store] : result;
       const selection = path !== undefined ? selectPath(base, path) : { found: true, value: base };
       const value =
         selection.found && depth !== undefined ? capDepth(selection.value, depth) : selection.value;
