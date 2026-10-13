@@ -1,3 +1,5 @@
+import { EventType, type ReticleEvent } from '@reticlehq/core';
+
 /**
  * Meaningful state vs cache bookkeeping.
  *
@@ -13,8 +15,9 @@
  * is always reported, never silently classed as noise. `status` is included because on its own
  * (no `data`/`error` move) it is the cache narrating its fetch, not the app changing.
  *
- * Reporting only. Nothing that decides a verdict reads this: predicates evaluate the event window
- * directly, so a `state` assertion on `isStale` still sees every transition.
+ * Predicates never read this: they evaluate the event window directly, so a `state` assertion on
+ * `isStale` still sees every transition. One verdict does: `state-vs-render` ignores a change this
+ * classes as bookkeeping, so a cache's own clock cannot stand in for an app change nobody rendered.
  */
 export const CACHE_BOOKKEEPING_KEYS: ReadonlySet<string> = new Set([
   'status',
@@ -62,4 +65,3 @@ export function isMeaningfulStateChange(event: ReticleEvent): boolean {
   const after = 'value' in event.data ? event.data['value'] : event.data['new'];
   return !isCacheBookkeepingDiff(event.data['old'], after);
 }
-import { EventType, type ReticleEvent } from '@reticlehq/core';
