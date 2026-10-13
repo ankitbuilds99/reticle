@@ -92,7 +92,12 @@ import { asNumber, asRecord, asString } from '@reticlehq/core';
 import { sourceOf } from './tools-helpers.js';
 import { confirmedByDeclaration } from './act/act-danger.js';
 import { dispatchAct, preflightAct } from './act/act-preflight.js';
-import { checkNet, disabledTargetNote, followLostObservation } from './act/act-observation.js';
+import {
+  checkNet,
+  disabledTargetNote,
+  followLostObservation,
+  unreachableTargetNote,
+} from './act/act-observation.js';
 import { type ToolDef, type ToolDeps, intentArg, sessionIdShape } from './tool-kit.js';
 import { verdictIntentGap } from '@reticlehq/engine/evidence/verdict-intent-gap.js';
 import { asActionType, gradeOf } from './act/act-helpers.js';
@@ -756,11 +761,7 @@ export const ACT_TOOLS: ToolDef[] = [
           appOrigin: session.url,
           background: session.background,
         });
-        // The single field an agent reads. Everything below it is the evidence it was derived from;
-        // this is the only one that has to be interpreted, and now it interprets itself.
-        // Same routing as the assert path (#1120), fed by the links this verdict PROVED. On red,
-        // `gradedLinks` is the declared surface (every anyOf branch), which must not exempt a 202
-        // the verdict never rested on — so only a green passes it through.
+        // The single field an agent reads; the evidence below is derived from it.
         const outcomePending = acceptedWriteLabels(windowEvents, {
           appUrl: session.url,
           background: session.background,
@@ -771,6 +772,7 @@ export const ACT_TOOLS: ToolDef[] = [
         // A click on a disabled control cannot cause anything: a miss there is not the app's.
         const inconclusive =
           verdict.inconclusive ?? disabledTargetNote(verdict.pass, actResult?.result);
+        const unreachableTarget = unreachableTargetNote(actResult?.result);
         const { decision, durable } = await withDurability(
           args['durable'],
           until,
@@ -790,6 +792,7 @@ export const ACT_TOOLS: ToolDef[] = [
             ...(alreadyTrueHiddenMatch ? { alreadyTrueHiddenMatch } : {}),
             // An assertion nobody could evaluate must not be reported as one the app failed.
             ...(inconclusive === undefined ? {} : { inconclusive }),
+            ...(unreachableTarget === undefined ? {} : { unreachableTarget }),
             // Nor must one nobody could OBSERVE. This is the act path, so it is the one that produced
             // the measured false red: a reload mid-wait, graded assertion_failed at the clicked
             // component's own file and line.

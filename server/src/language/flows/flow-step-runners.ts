@@ -6,7 +6,7 @@
  * point: the action window must open and close identically no matter which anchor found the element,
  * or a step's events land in the wrong window depending on how it was addressed.
  */
-import { expectedElementTestid } from '@reticlehq/core';
+import { asRecord, asString, expectedElementTestid } from '@reticlehq/core';
 import {
   AnchorKind,
   DEGRADED_ANCHOR_ROLE,
@@ -15,6 +15,7 @@ import {
   QueryBy,
   ReplayStatus,
   ReticleCommand,
+  Verified,
   type FlowAnchor,
   type FlowReplayResult,
   type FlowStep,
@@ -614,7 +615,18 @@ export async function runSequenceStep(
     let staleBefore = -1;
     for (;;) {
       const act = await send(live.slice(start, to));
-      if (act.ok) return true;
+      if (act.ok) {
+        const payload = asRecord(act.result);
+        const verified = asString(payload['verified']);
+        const needsVerification = subs.slice(start, to).some((sub) => sub.expect !== undefined);
+        if (needsVerification && verified !== undefined && verified !== Verified.YES) {
+          result.ok = false;
+          result.error =
+            asString(payload['because']) ?? `the replayed sequence was not verified (${verified})`;
+          return false;
+        }
+        return true;
+      }
       const error = act.error ?? 'command failed';
       if (!isStaleRefError(error)) {
         result.ok = false;
