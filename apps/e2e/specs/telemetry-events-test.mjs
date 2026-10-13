@@ -19,11 +19,14 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { fileURLToPath } from 'node:url';
 import { waitUntil } from '../wait-until.mjs';
-const DIST = join(fileURLToPath(new URL('../../../server/dist', import.meta.url)));
+// A file:// URL, not a filesystem path. These are only ever the BASE of a dynamic `import()`, and
+// on Windows `import('C:\…')` throws ERR_UNSUPPORTED_ESM_URL_SCHEME — "absolute paths must be
+// valid file:// URLs". The core import below already does it this way; these two did not, so the
+// whole spec failed to load on Windows before a single check ran.
+const DIST = new URL('../../../server/dist', import.meta.url).href;
 // The rules that decide a verdict are their own package now, so they build to their own dist.
-const ENGINE_DIST = join(fileURLToPath(new URL('../../../engine/dist', import.meta.url)));
+const ENGINE_DIST = new URL('../../../engine/dist', import.meta.url).href;
 const PORT = 9960;
 
 // Events that happen inside a DAEMON RUN and therefore carry `sessionId`. IMPORTED from core, not
@@ -307,7 +310,8 @@ await settle();
   // whether this kind was already seen this session — and says nothing about the app it was found in.
   // `bug_attribution` is ALWAYS present and is an owner, never a description of the app: `app` |
   // `request` | `reticle` | `unclassified`, from a closed list.
-  const BUG_FIELDS = new Set(['bug_falseGreen', 'bug_fingerprint', 'bug_kind', 'bug_repeat', 'bug_source', 'bug_tool', 'bug_attribution']);
+  // `bug_occurrence` is OUR count of hits of one fingerprint in the session: an index, never app data.
+  const BUG_FIELDS = new Set(['bug_falseGreen', 'bug_fingerprint', 'bug_kind', 'bug_repeat', 'bug_source', 'bug_tool', 'bug_attribution', 'bug_occurrence']);
   check('  carries only the classified kind, source, dedup flag and attribution', bugs.every((b) =>
     Object.keys(b.properties).filter((k) => k.startsWith('bug_')).every((k) => BUG_FIELDS.has(k))));
   // Whose fault it was. It shipped twice and was wrong both times — across two real drives every
@@ -477,14 +481,17 @@ await settle(() => find('runtime_crashed').length >= 2);
   check('  leaks NO user path or app file', !blob.includes('/Users/ada') && !blob.includes('Checkout.tsx'));
   // The detail that makes a fingerprint diagnosable rather than merely rankable.
   const deep = cs.find((e) => e.properties.crash_errorType === 'TypeError');
-  check('  carries a READABLE skeleton message', typeof deep?.properties.crash_message === 'string' && deep.properties.crash_message.includes('*'));
+  // Allow-listed: a sentence Reticle wrote, else an error code plus the fingerprint. The class is
+  // already `crash_errorType`; the message is not ours, so it arrives as its group key alone.
+  check('  carries its fingerprint, never its text', /^(?:[A-Za-z_]+ )?#[0-9a-f]{12}$/.test(deep?.properties.crash_message ?? ''), String(deep?.properties.crash_message));
   check('  carries OUR OWN frames with function@file:line', JSON.stringify(deep?.properties.crash_frames ?? []).includes('act-tools.js'));
   check('  frames name the FUNCTION, not just the file', JSON.stringify(deep?.properties.crash_frames ?? []).includes('@'));
   check('  frames exclude the user\'s own app frames', !JSON.stringify(deep?.properties.crash_frames ?? []).includes('checkout'));
   check('  carries the tool in flight (the trigger point)', deep?.properties.crash_tool === 'reticle_act', String(deep?.properties.crash_tool));
   check('  carries the agent\'s approach run (breadcrumb)', JSON.stringify(deep?.properties.crash_breadcrumb ?? []).includes('reticle_assert'));
   check('  carries node version + arch', typeof deep?.properties.crash_nodeVersion === 'string' && typeof deep?.properties.crash_arch === 'string');
-  check('  attributes the crash to the agent', deep?.properties.actor === 'agent');
+  // Nobody observed who caused it: the daemon does plenty on its own, so no actor is claimed.
+  check('  claims no actor for the crash', deep !== undefined && deep.properties.actor === undefined, String(deep?.properties.actor));
   // "Out of memory" and "our bug" produce identical stack traces; this is what separates them.
   check('  carries the machine state at the moment of the crash', typeof deep?.properties.crash_machine === 'object' && deep.properties.crash_machine !== null);
   check('  machine snapshot has real memory numbers', (deep?.properties.crash_machine?.totalMemMb ?? 0) > 0);
@@ -593,7 +600,7 @@ await settle();
   await settle();
   const fromPristineHome = find('reticle_installed').length - installedBefore;
   check('reticle_installed fires on a machine that has never run Reticle', fromPristineHome === 1, `got ${fromPristineHome} from the pristine HOME`);
-  rmSync(fakeHome, { recursive: true, force: true });
+  removeScratch(fakeHome);
 }
 
 // ── 9. Daemon shutdown → the rich session summary ─────────────────────────────
@@ -620,6 +627,8 @@ await daemon.shutdown('idle');
   const p = s?.properties ?? {};
   check('  marked final', arrived && p.session_final === true);
   check('  counted tool calls', arrived && p.session_toolCalls === 12, String(p.session_toolCalls));
+  // Windowed like every other event, so the session total rides beside it under its own name.
+  check('  carries the session total under its own name', arrived && p.session_lifetimeToolCalls === 12, String(p.session_lifetimeToolCalls));
   check('  histogram by tool name', arrived && JSON.stringify(p.session_toolCounts ?? {}).includes('reticle_act'));
   check('  counted verifications', arrived && p.session_verifications === 4, String(p.session_verifications));
   check('  counted tool errors', arrived && p.session_toolErrors === 3, String(p.session_toolErrors));
@@ -666,7 +675,8 @@ await daemon.shutdown('idle');
   check('  counted SDK failures from the browser', arrived && p.session_sdkFailures === 3, String(p.session_sdkFailures));
   check('  grouped SDK failures by shape', arrived && sdk.length === 2, `${sdk.length} shapes`);
   check('  SDK failure names the module that reported it', sdk.some((e) => e.tool === 'network_observer'));
-  check('  SDK failure carries a readable skeleton', sdk.some((e) => e.message.includes('cannot patch fetch')));
+  // Not a sentence Reticle wrote, so it arrives as its fingerprint; the module names the defect.
+  check('  SDK failure carries its fingerprint, never the page URL', sdk.length > 0 && sdk.every((e) => /#[0-9a-f]{12}$/.test(e.message) && !e.message.includes('acme.internal')));
   check('  SDK failure leaks NO app URL', !JSON.stringify(sdk).includes('acme.internal'));
   check('  SDK failures kept separate from tool errors', arrived && (p.session_errors ?? []).every((e) => e.tool !== 'network_observer'));
 }
@@ -689,6 +699,55 @@ await waitUntil(() => find('project_profiled').length > 0);
   }
 }
 
+// ── 11. Product signals: HUD pages and prompts, the platform link, the Harness funnel ──
+// Each kind asserted by its FIELDS, not merely that it arrived: a block missing from one of the
+// emitter's lists still arrives, carrying only the envelope.
+{
+  const { reportHudUse } = await import(`${DIST}/telemetry/hud-events.js`);
+  const { reportPlatformLinked } = await import(`${DIST}/telemetry/platform-linked.js`);
+  const { reportHarnessRun } = await import(`${DIST}/telemetry/harness-run.js`);
+  // A linked project, with a workspace name on disk that must never travel.
+  writeFileSync(
+    join(root, '.reticle', 'cloud.json'),
+    JSON.stringify({ projectId: 'p1', url: 'https://x.test', orgId: 'org_e2e', workspace: 'Acme Secret Corp' }),
+  );
+  reportHudUse({ view: 'expanded', panel: 'harness' }, 'tab-e2e');
+  reportHudUse({ panel: 'chat' }, 'tab-e2e');
+  reportHudUse({ panel: 'harness' }, 'tab-e2e'); // within 30s: deduped
+  reportHudUse({ prompt: 'rail' }, 'tab-e2e');
+  reportHudUse({ prompt: 'rail' }, 'tab-e2e'); // once per surface per tab
+  reportPlatformLinked({ via: 'hud', priorProjectId: undefined, projectId: 'p1', workspaceId: 'org_e2e' });
+  await reportHarnessRun(
+    { source: 'hud', hosted: true },
+    () => Promise.resolve({ status: 'done', result: { proved: true, journeys: [{ by: 'replay' }] } }),
+    () => false,
+  );
+  await settle(() => find('harness_run').length >= 2 && find('platform_linked').length >= 1);
+  const views = find('hud_viewed');
+  check('hud_viewed fires for a HUD page', views.length >= 1);
+  check('  names the Harness page as harness, not chat', views.some((e) => e.properties.hud_view === 'harness'));
+  check('  dedupes the same page on the same tab within 30s', views.filter((e) => e.properties.hud_view === 'harness').length === 1, String(views.length));
+  check('  carries the tab-count bucket', views.every((e) => e.properties.hud_tabs === '1'));
+  const prompts = find('hud_signin_prompted');
+  check('hud_signin_prompted fires once per surface per tab', prompts.length === 1, String(prompts.length));
+  check('  carries the surface', prompts[0]?.properties.hud_surface === 'rail');
+  const linked = find('platform_linked')[0];
+  check('platform_linked fires', linked !== undefined);
+  check('  carries how it was linked', linked?.properties.link_via === 'hud');
+  check('  carries the workspace id the platform joins on', linked?.properties.workspaceId === 'org_e2e');
+  const runs = find('harness_run');
+  check('harness_run fires once started and once completed', runs.length === 2, String(runs.length));
+  const done = runs.find((e) => e.properties.harness_phase === 'completed');
+  check('  completed carries the outcome and the buckets', done?.properties.harness_outcome === 'proved' && done?.properties.harness_journeys === '1' && done?.properties.harness_replayed === '1');
+  check('  carries who started it and whether it was hosted', done?.properties.harness_source === 'hud' && done?.properties.harness_hosted === true);
+  // The envelope, on an event fired after the link: linked, with the workspace id.
+  check('every event carries accountState', views.every((e) => ['signed_out', 'signed_in', 'linked'].includes(e.properties.accountState)));
+  check('  a linked project reads linked, with its workspace id', views[0]?.properties.accountState === 'linked' && views[0]?.properties.workspaceId === 'org_e2e');
+  check('  carries how reticle was launched, as a bucket', ['npx', 'global', 'project', 'other'].includes(views[0]?.properties.launch));
+  const blob = JSON.stringify([...views, ...prompts, ...runs, linked]);
+  check('  leaks NO workspace name', !blob.includes('Acme Secret Corp'));
+}
+
 // ── the session key, checked once EVERY event has been emitted ────────────────
 // Placed last on purpose: run in section 1b it saw only CLI events, which deliberately carry no
 // sessionId, so it compared an empty set and passed for the wrong reason.
@@ -701,11 +760,32 @@ await waitUntil(() => find('project_profiled').length > 0);
   check('  and no one-shot event invents one', unscoped.every((e) => e.properties.sessionId === undefined), unscoped.map((e) => e.event).join(','));
 }
 
+
+/**
+ * Remove a scratch dir without letting the REMOVAL decide the verdict.
+ *
+ * `force: true` only swallows "it was not there"; it does nothing about EPERM, which is what
+ * Windows returns while a handle is still open somewhere in the tree — a just-exited child, or a
+ * virus scanner that has not let go yet. Node documents a remedy for exactly that (`maxRetries`,
+ * which retries on EPERM/EBUSY with a linear backoff), so ask for it.
+ *
+ * And if it STILL fails, say so and carry on. This spec exists to prove telemetry events reach the
+ * wire; whether the OS will then let us delete a temp directory is a different question, and a
+ * 149/149 run reported as FAILED because of a locked scratch file is a false red.
+ */
+function removeScratch(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (err) {
+    console.log(`  (left ${dir} behind: ${err.code ?? err.message})`);
+  }
+}
+
 // ── report ────────────────────────────────────────────────────────────────────
 console.log('');
 for (const r of results) console.log(`${r.ok ? ' PASS' : ' FAIL'}  ${r.name}${r.detail && !r.ok ? `  [${r.detail}]` : ''}`);
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 console.log(`events captured: ${JSON.stringify(Object.fromEntries(Object.entries(captured.reduce((a, e) => ({ ...a, [e.event]: (a[e.event] ?? 0) + 1 }), {}))))}`);
-rmSync(root, { recursive: true, force: true });
+removeScratch(root);
 process.exit(failed.length === 0 ? 0 : 1);

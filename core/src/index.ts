@@ -116,6 +116,7 @@ export * from './realm/registry.js';
 // from the protocol. What core re-exports are the few names this repository has always spelled its
 // own way -- see wire/channel.ts, which imports the rule rather than restating it.
 export * from './telemetry-session.js'; // the session/project rollup payloads
+export * from './telemetry-signals.js'; // account, client, HUD, link and Harness-run signals
 export * from './telemetry-license.js'; // LicenseActivation — shared by the licence gate and telemetry
 export * from './telemetry-feedback.js'; // the two things a PERSON writes: feedback + a self-declared identity
 export * from './artifacts/impact.js'; // the user's own record of what Reticle has done for them (local only)
@@ -129,3 +130,4 @@ export {
 } from './identity/contract-fingerprint.js';
 export { fingerprintFinding, type FindingIdentity } from './verdict/finding-fingerprint.js';
 export * from './words/unreachable-notice.js'; // the page's unreachable warning, as a contract the daemon parses
+export * from './words/writing-rule.js'; // how agents write the text Reticle keeps (ASD-STE100, about 80%)

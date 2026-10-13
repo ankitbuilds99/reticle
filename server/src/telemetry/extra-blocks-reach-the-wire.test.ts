@@ -17,7 +17,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { InstallSource, TelemetryEventKind } from '@reticlehq/core/telemetry';
+import {
+  AgentClient,
+  InstallSource,
+  LaunchMethod,
+  TelemetryAccountState,
+  TelemetryEventKind,
+} from '@reticlehq/core/telemetry';
 import { createTelemetry, type TelemetryExtra } from './telemetry.js';
 import { TelemetryEventSchema } from '@reticlehq/core/telemetry';
 
@@ -98,16 +104,46 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   // The nine below were absent, and absence here means nothing ever proved they reach the wire.
   // Added when the derived check above was introduced; `onboarding` was genuinely broken when they
   // were, which is the whole argument for deriving the list rather than maintaining it.
-  feedback: { source: 'cli', kind: 'bug' },
-  session: { durationMs: 1200, toolCalls: 3 },
-  project: { stack: 'vite', stackSource: 'config' },
-  verification: { via: 'tool', verified: 'yes' },
-  versionChange: { from: '3.0.0', to: '3.1.0' },
+  // Each sample is SCHEMA-VALID: the emitter drops an event that fails the wire schema.
+  feedback: { source: 'agent', kind: 'bug', text: 'x' },
+  session: {
+    durationMs: 1200,
+    toolCalls: 3,
+    toolCounts: {},
+    toolErrors: 0,
+    verifications: 0,
+    final: false,
+  },
+  project: {
+    stack: 'vite',
+    stackSource: 'cwd',
+    git: 'none',
+    flowCount: 0,
+    baselineCount: 0,
+    visualBaselineCount: 0,
+    runCount: 0,
+    hasContract: false,
+    capsuleCount: 0,
+    featuresUsed: [],
+    featureDepth: 0,
+  },
+  verification: { via: 'tool', verified: 'yes', passed: true, falseGreenCaught: false },
+  versionChange: { from: '3.0.0', to: '3.1.0', direction: 'update' },
   crash: { kind: 'daemon', errorType: 'Error' },
   identity: { context: 'company' },
   onboarding: { phase: 'first_run', step: 'verdict_produced', status: 'completed' },
-  refusal: { tool: 'reticle_act', reason: 'no_session' },
-  bug: { kind: 'element.absent', source: 'assertion', tool: 'reticle_assert' },
+  refusal: { tool: 'reticle_act', reason: 'no_session', retried: false },
+  bug: {
+    kind: 'element.absent',
+    source: 'assertion',
+    tool: 'reticle_assert',
+    falseGreen: false,
+    repeat: false,
+    attribution: 'unclassified',
+  },
+  hud: { view: 'harness', tabs: '1' },
+  link: { via: 'connect' },
+  harness: { phase: 'completed', source: 'hud', hosted: true, outcome: 'proved', journeys: '1' },
 };
 
 async function propertiesFor(extra: TelemetryExtra): Promise<Record<string, unknown>> {
@@ -163,6 +199,22 @@ describe('every declared block survives to the wire', () => {
   it('carries a scalar extra, which has no block to be flattened out of', async () => {
     const properties = await propertiesFor({ installSource: InstallSource.PLUGIN });
     expect(properties['installSource']).toBe(InstallSource.PLUGIN);
+  });
+
+  it('carries the account, workspace, client and launch scalars on every event', async () => {
+    const { impl, properties } = recordingFetch();
+    const telemetry = createTelemetry({
+      version: '9.9.9',
+      env: { ...TEST_ENV, RETICLE_TELEMETRY: '1', CLAUDECODE: '1' },
+      fetchImpl: impl,
+      cwd: USER_PROJECT,
+    });
+    await telemetry.emit(TelemetryEventKind.CLI_COMMAND_RUN, { command: 'status' });
+    const p = properties();
+    expect(Object.values(TelemetryAccountState)).toContain(p['accountState']);
+    expect(typeof p['linked']).toBe('boolean');
+    expect(p['client']).toBe(AgentClient.CLAUDE_CODE);
+    expect(Object.values(LaunchMethod)).toContain(p['launch']);
   });
 
   it('never nests a block, which would make it invisible to a breakdown', async () => {
