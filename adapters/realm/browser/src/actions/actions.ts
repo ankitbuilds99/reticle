@@ -712,6 +712,7 @@ export async function executeAction(
     targetMatched: named && el.isConnected,
     visible,
     ...(animating ? { animating: true as const } : {}),
+    hitTested: geometry.hitTested,
     enabled,
     defaultPrevented,
     focusMoved: prevFocus !== nextFocus ? `${prevFocus ?? 'null'}->${nextFocus ?? 'null'}` : null,

@@ -24,6 +24,8 @@ export interface ActionEffect {
   visible: boolean;
   /** A CSS animation or transition was still running when visibility was sampled. */
   animating?: true;
+  /** A measurable click-like target was resolved through the browser hit-test. */
+  hitTested: boolean;
   /** Not disabled / aria-disabled at the start of the action. */
   enabled: boolean;
   /** The primary cancelable event's dispatchEvent returned false (handler called preventDefault). */
