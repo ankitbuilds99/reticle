@@ -177,6 +177,25 @@ describe('act_sequence per-step progress', () => {
     expect(stalled?.error).toContain('timed out');
   });
 
+  it('records the successful prefix when a later step stalls', async () => {
+    const session = fakeSession({ failAtStep: 2 });
+    const deps = fakeDeps(session);
+    const recordingName = 'partial-sequence';
+    deps.recordings.start(recordingName, 0, '/app', session.id);
+
+    await tool(ReticleTool.ACT_SEQUENCE).handler(deps, {
+      steps: [
+        { ref: 'e1', action: 'fill', args: { value: 'a@b.com' } },
+        { ref: 'e2', action: 'fill', args: { value: 'hunter2' } },
+        { ref: 'e3', action: 'click' },
+      ],
+    });
+
+    const recorded = deps.recordings.stop(recordingName);
+    expect(recorded?.steps).toHaveLength(1);
+    expect(recorded?.steps[0]?.args['steps']).toHaveLength(2);
+  });
+
   it('marks the act cursor only when at least one step completed', async () => {
     const session = fakeSession({ failAtStep: 0 });
     const deps = fakeDeps(session);

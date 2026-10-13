@@ -441,12 +441,12 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
         session.lastAct.markActed(since, undefined, undefined);
       }
       // Same as captureAct: no `active()` gate, so a sequence driven with nothing open still lands
-      // in the ambient tape. A stalled plan is still excluded — those steps never ran.
+      // in the ambient tape. A stalled plan keeps only the prefix whose steps actually ran.
       let journey: RecordedStep | undefined;
-      if (stalledAt === undefined) {
+      if (completed > 0) {
         // A sub-step keeps its `expect` only if it held — same rule as act_and_wait, so a flow
         // never replays an expectation that was never once observed to hold.
-        const proved = inputSteps.map((raw, i) => {
+        const proved = inputSteps.slice(0, completed).map((raw, i) => {
           const step = asRecord(raw);
           const { expect: _expect, ...rest } = step;
           return true === expectations[i]?.held ? step : rest;
@@ -454,8 +454,8 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
         const recorded = compileSequenceStep(
           { ...args, steps: proved },
           {
-            count: inputSteps.length,
-            steps: stepResults,
+            count: completed,
+            steps: stepResults.slice(0, completed),
           },
         );
         journey = recorded;
