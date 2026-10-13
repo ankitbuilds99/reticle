@@ -1,6 +1,7 @@
 import { FlowErrorCode, NO_SUCH_FLOW, ReplayStatus, ReticleTool, Verified } from '@reticlehq/core';
 import { SAFE_SEGMENT_PATTERN, type ProjectId } from '@reticlehq/core';
 import { FlowParseNote } from './flow-expect-grammar.js';
+import { isAmbient } from './recording/tape/recordings.js';
 
 /** Discriminated result so callers never branch on free strings. */
 export type FlowResult<T> =
@@ -97,5 +98,33 @@ export function noteReplayCheck(
     ReticleTool.FLOW_REPLAY,
     { flowName: name },
     replayVerdictEffect(name, status, assertsNothing),
+  );
+}
+
+/**
+ * The active recording a refused `reticle_flow_save` was most likely about: the one it named, or
+ * the only one running when it named none and nothing is stopped yet.
+ */
+// A running recording has no compiled program yet, so a save refusal names it (#1551).
+export function stillRecording(
+  active: readonly string[],
+  name: string,
+  explicitName: string | undefined,
+  held: readonly string[],
+): string | undefined {
+  if (active.includes(name) && !isAmbient(name)) return name;
+  // The ambient tape is the daemon's own, never one the agent started, so it is neither named nor
+  // counted: with a named recording beside it, that one is still the only candidate.
+  const opened = active.filter((recording) => !isAmbient(recording));
+  if ((explicitName === undefined || 0 === explicitName.length) && 0 === held.length) {
+    return 1 === opened.length ? opened[0] : undefined;
+  }
+  return undefined;
+}
+
+export function stillRecordingMessage(recording: string): string {
+  return (
+    `'${recording}' is still recording, and flow_save only saves a stopped recording. ` +
+    `Stop it first with reticle_record{action:"stop", recordingName:"${recording}"}, then save again.`
   );
 }

@@ -6,6 +6,7 @@ import { confirmDangerousArg } from '@/surface/tools/args/confirm-dangerous-arg.
 import { z } from 'zod';
 import { emptyFlowRefusal } from './empty-flow.js';
 import { aliasParam, aliasUsed } from '@/surface/tools/args/alias-args.js';
+import { stillRecording, stillRecordingMessage } from './flow-result.js';
 import { resolveAnnotateTarget } from './annotate-notes/annotate-target.js';
 import {
   type ProjectId,
@@ -153,7 +154,7 @@ export const FLOW_TOOLS: ToolDef[] = [
   {
     name: ReticleTool.FLOW_SAVE,
     description:
-      'Persist the last/active recording (by name) as a git-checked, anchor-resolved flow at .reticle/flows/<name>.json. Each step is bound to a SEMANTIC anchor (testid/role/signal), never a volatile ref; steps without a resolvable testid are kept with degraded:true (a "add a data-testid here" marker) rather than dropped. Returns { name, stepCount, degraded, empty, assertions, warning? } — `assertions.grade` is asserted | presence-only | assertion-free: a flow that only acts (or only checks element presence) will pass even if the feature breaks, so when grade is not "asserted" follow assertions.warning and add a consequence assertion via reticle_annotate (assert-signal / assert-net / success-state). `warning` is present when the recording left a page and returned to it: replay has no navigation steps, so the next click will look for a control on a page the tab is no longer on.',
+      'Persist a STOPPED recording (by name) as a git-checked, anchor-resolved flow at .reticle/flows/<name>.json. A recording that is still running is refused: stop it first with reticle_record{action:"stop"}, and the refusal names the exact call. Each step is bound to a SEMANTIC anchor (testid/role/signal), never a volatile ref; steps without a resolvable testid are kept with degraded:true (a "add a data-testid here" marker) rather than dropped. Returns { name, stepCount, degraded, empty, assertions, warning? } — `assertions.grade` is asserted | presence-only | assertion-free: a flow that only acts (or only checks element presence) will pass even if the feature breaks, so when grade is not "asserted" follow assertions.warning and add a consequence assertion via reticle_annotate (assert-signal / assert-net / success-state). `warning` is present when the recording left a page and returned to it: replay has no navigation steps, so the next click will look for a control on a page the tab is no longer on.',
     inputSchema: {
       flow: z
         .string()
@@ -218,12 +219,10 @@ export const FLOW_TOOLS: ToolDef[] = [
     handler: (deps: ToolDeps, args) => {
       const aliases = ['flow', 'name', 'recordingName'];
       const normalized = aliasUsed(args, 'flowName', aliases);
+      const explicitName = asString(aliasParam(args, 'flowName', aliases)['flowName']);
       // The one stopped recording when the call names none — the same defaulting record{stop} and
       // annotate use. With several, nothing is picked: the refusal below names them.
-      const name = resolveAnnotateTarget(
-        asString(aliasParam(args, 'flowName', aliases)['flowName']),
-        deps.recordings.compiled(),
-      );
+      const name = resolveAnnotateTarget(explicitName, deps.recordings.compiled());
       const program = deps.recordings.getCompiled(name);
       if (program === undefined) {
         /*
@@ -236,6 +235,13 @@ export const FLOW_TOOLS: ToolDef[] = [
          * before the names were compared.
          */
         const held = deps.recordings.compiled();
+        const running = stillRecording(deps.recordings.active(), name, explicitName, held);
+        if (running !== undefined) {
+          return Promise.resolve({
+            error: stillRecordingMessage(running),
+            code: FlowErrorCode.NO_RECORDING,
+          });
+        }
         return Promise.resolve({
           error:
             0 === held.length

@@ -139,7 +139,7 @@ export const ambientRecordingOf = (session: string | undefined): string =>
   session === undefined ? AMBIENT_RECORDING : `${AMBIENT_RECORDING}:${session}`;
 
 /** Whether a recording is an ambient tape: the daemon's own, never one somebody opened. */
-const isAmbient = (name: string): boolean =>
+export const isAmbient = (name: string): boolean =>
   AMBIENT_RECORDING === name || name.startsWith(`${AMBIENT_RECORDING}:`);
 
 /**
