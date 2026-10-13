@@ -282,9 +282,18 @@ function queryByText(container: HTMLElement, value: string, query: ElementQuery)
 }
 
 function queryByLabel(container: HTMLElement, value: string): HTMLElement[] {
-  return elementsUnder(container).filter(
-    (el) => semanticNameTarget(el) && fuzzyVisibleText(getAccessibleName(el), value),
-  );
+  const expected = normaliseVisibleText(value).toLowerCase();
+  const exact: HTMLElement[] = [];
+  const fuzzy: HTMLElement[] = [];
+
+  for (const el of elementsUnder(container)) {
+    if (!semanticNameTarget(el)) continue;
+    const name = normaliseVisibleText(getAccessibleName(el)).toLowerCase();
+    if (!name.includes(expected)) continue;
+    (name === expected ? exact : fuzzy).push(el);
+  }
+
+  return exact.length > 0 ? exact : fuzzy;
 }
 
 function queryByPlaceholder(container: HTMLElement, value: string): HTMLElement[] {
