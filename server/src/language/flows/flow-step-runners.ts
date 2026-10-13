@@ -623,11 +623,13 @@ export async function runSequenceStep(
           if (verified === Verified.NO) {
             result.ok = false;
             result.error =
-              asString(payload['because']) ?? `the replayed sequence was not verified (${verified})`;
+              asString(payload['because']) ??
+              `the replayed sequence was not verified (${verified})`;
             return false;
           }
           result.note =
-            asString(payload['because']) ?? `the replayed sequence remains unverified (${verified})`;
+            asString(payload['because']) ??
+            `the replayed sequence remains unverified (${verified})`;
         }
         return true;
       }
