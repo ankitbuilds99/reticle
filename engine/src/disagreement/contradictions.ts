@@ -28,6 +28,7 @@ import { findUnitMismatches } from './unit-mismatch.js';
 import { asString } from '@reticlehq/core';
 import { isDeclaredRead, matchesDeclaredFailure } from '@/question/declared.js';
 import { runRegisteredFolds } from './contradiction-folds.js';
+import { isMeaningfulStateChange } from '../state-bookkeeping.js';
 import type {
   Contradiction,
   OwnContradiction,
@@ -632,7 +633,7 @@ function findWindowContradictions(
   // failed call in it, and both were already answered by the rule that owns that fact.
   if (
     options.actionSince !== undefined &&
-    events.some((e) => e.type === EventType.STATE_CHANGE) &&
+    events.some(isMeaningfulStateChange) &&
     !events.some((e) => e.type === EventType.NET_REQUEST || e.type === EventType.NET_PENDING) &&
     !events.some(
       (e) =>
