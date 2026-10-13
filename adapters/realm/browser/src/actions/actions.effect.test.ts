@@ -65,7 +65,7 @@ describe('action effect: enabled / visible probes', () => {
   it('reports an active animation separately from a hidden visibility sample', async () => {
     document.body.innerHTML = '<button style="opacity:0">Save</button>';
     const button = document.querySelector('button');
-    if (button === null) throw new Error('button was not created');
+    if (null === button) throw new Error('button was not created');
     Object.defineProperty(button, 'getAnimations', {
       configurable: true,
       value: () => [{ pending: false, playState: 'running' }],

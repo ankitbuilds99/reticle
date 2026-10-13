@@ -73,8 +73,10 @@ console.log('\n=== AUTH RETRY: a 401 the app recovered from is not a defect ==='
 
 const refOf = async (by, value) => {
   for (let i = 0; i < 40; i++) {
-    const r = (await T('reticle_query', { by, value })).elements?.[0]?.ref;
-    if (r) return r;
+    const element = (await T('reticle_query', { by, value })).elements?.[0];
+    // The view enters with a short opacity animation. Do not dispatch against the element while
+    // it is still hidden: this fixture is testing auth retry, not synthetic input reachability.
+    if (element?.ref && element.visible !== false) return element.ref;
     await sleep(150);
   }
   return undefined;
