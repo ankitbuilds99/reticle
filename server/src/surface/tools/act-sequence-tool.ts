@@ -192,6 +192,8 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
     since: z.number(),
     dispatched: z.boolean(),
     completed: z.number(),
+    /** Number of steps included in the saved recording, when a recording was created. */
+    recorded: z.number(),
     stalled_at: z.number().optional(),
     /** Index of the step whose declared consequence did not hold, when one did not. */
     stopped_at: z.number().optional(),
@@ -436,7 +438,10 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
        * The halted step counts: it WAS dispatched, and only the consequence it declared failed
        * afterwards. A stalled step never ran, which is why that index stays exclusive.
        */
-      const completed = stoppedAt !== undefined ? stoppedAt + 1 : (stalledAt ?? inputSteps.length);
+      const completed =
+        DeviationMode.CONTINUE === onDeviation
+          ? (stalledAt ?? inputSteps.length)
+          : (stoppedAt !== undefined ? stoppedAt + 1 : (stalledAt ?? inputSteps.length));
       if (completed > 0) {
         session.lastAct.markActed(since, undefined, undefined);
       }
@@ -488,12 +493,16 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
           ...(pageBefore === undefined ? {} : { startPath: pageBefore }),
         });
       }
-      const ran = stoppedAt ?? stalledAt ?? inputSteps.length;
-      const tail = inputSteps.slice(ran + (stoppedAt === undefined ? 0 : 1));
+      const tailStart =
+        DeviationMode.HALT === onDeviation && stoppedAt !== undefined
+          ? stoppedAt + 1
+          : (stalledAt ?? inputSteps.length);
+      const tail = inputSteps.slice(tailStart);
       return withControl(session, {
         since,
         dispatched: completed > 0,
         completed,
+        recorded: journey === undefined ? 0 : completed,
         ...(stalledAt !== undefined ? { stalled_at: stalledAt } : {}),
         ...(stoppedAt !== undefined ? { stopped_at: stoppedAt } : {}),
         verified: grade.verified,
