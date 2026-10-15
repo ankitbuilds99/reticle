@@ -42,7 +42,7 @@ import {
   type SeedStorage,
 } from '@reticlehq/core';
 import { HudVisibility, ReticleTool, SESSION_HEALTH } from '@reticlehq/core';
-import { HOST_STUB_NOTE, type ToolDef, type ToolDeps } from './tool-kit.js';
+import { type ToolDef, type ToolDeps } from './tool-kit.js';
 import { type BrowserPool, PoolAtCapacityError } from '@/portal/pool/browser-pool.js';
 import { asString } from '@reticlehq/core';
 import { chromiumPreflightRefusal } from '@/command/cli/doctor/browser/chromium-hint.js';
