@@ -92,12 +92,8 @@ import { asNumber, asRecord, asString } from '@reticlehq/core';
 import { sourceOf } from './tools-helpers.js';
 import { confirmedByDeclaration } from './act/act-danger.js';
 import { dispatchAct, preflightAct } from './act/act-preflight.js';
-import {
-  checkNet,
-  disabledTargetNote,
-  followLostObservation,
-  unreachableTargetNote,
-} from './act/act-observation.js';
+import { checkNet, disabledTargetNote, followLostObservation } from './act/act-observation.js';
+import { unreachableTargetNote } from './act/act-observation.js';
 import { type ToolDef, type ToolDeps, intentArg, sessionIdShape } from './tool-kit.js';
 import { verdictIntentGap } from '@reticlehq/engine/evidence/verdict-intent-gap.js';
 import { asActionType, gradeOf } from './act/act-helpers.js';
