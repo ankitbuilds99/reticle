@@ -100,7 +100,7 @@ interface BrowserSlot {
 export const NO_HEADED_BROWSER = 'no headed browser can be opened here';
 
 /**
-* An acquire that asked to be refused rather than queued found every slot taken (#1535). Queued,
+ * An acquire that asked to be refused rather than queued found every slot taken (#1535). Queued,
  * it waited behind the cap with no deadline and no status, and `reticle drive` reported the 60 s
  * timeout as a daemon shutting down. The message names the cap and the one override for it.
  */
