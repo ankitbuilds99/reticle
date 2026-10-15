@@ -942,11 +942,6 @@ describe('runInit — a failed install must not leave the app half-wired', () =>
 });
 
 /**
- * Every app came up `hasCapabilities: false`, capabilities empty, `reticle_state` holding only
- * `__reticle_renders` — the state-truth read, which SKILL.md calls the highest-value line, was
- * unavailable on all six real apps out of the box because `init` wired neither call.
- */
-/**
  * Route-group root layouts (#1538): with no `app/layout.*`, each group's `layout.*` is a root
  * layout, a standard App Router shape. init used to report "no root layout" and hand back a manual
  * step, even when ReticleDev was already mounted in one of them.
@@ -1000,8 +995,35 @@ describe('runInit — a Next app whose root layouts live in route groups', () =>
     expect(out).toContain('app/(admin)/layout.tsx, app/(shop)/layout.tsx');
     expect(out).not.toContain('no root layout (app/layout.tsx)');
   });
+
+  it('names the group root layouts it left without ReticleDev', () => {
+    const io = run({
+      'app/(site)/layout.tsx': LAYOUT,
+      'app/(site)/page.tsx': '',
+      'app/(admin)/layout.tsx': LAYOUT,
+      'app/(admin)/users/page.tsx': '',
+    });
+    expect(io.written['app/(site)/layout.tsx']).toContain('<ReticleDev />');
+    // Only the one that renders / is patched; the other is named, never edited.
+    expect(io.written['app/(admin)/layout.tsx']).toBeUndefined();
+    const out = io.lines.join('\n');
+    expect(out).toContain('Route groups without ReticleDev');
+    expect(out).toContain(
+      '<ReticleDev /> is mounted in app/(site)/layout.tsx only; app/(admin)/layout.tsx',
+    );
+  });
+
+  it('says nothing more when the only group layout is the one it mounted into', () => {
+    const io = run({ 'app/(site)/layout.tsx': LAYOUT, 'app/(site)/page.tsx': '' });
+    expect(io.lines.join('\n')).not.toContain('Route groups without ReticleDev');
+  });
 });
 
+/**
+ * Every app came up `hasCapabilities: false`, capabilities empty, `reticle_state` holding only
+ * `__reticle_renders` — the state-truth read, which SKILL.md calls the highest-value line, was
+ * unavailable on all six real apps out of the box because `init` wired neither call.
+ */
 describe('runInit — the capabilities module', () => {
   const APP = {
     'package.json': JSON.stringify({

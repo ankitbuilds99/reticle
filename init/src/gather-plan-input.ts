@@ -375,6 +375,7 @@ export function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown):
         : null,
     // Capabilities: scanned, never asked for. Bounded — a hint for the agent, not a repo index.
     nextLayoutCandidates: nextMount.candidates,
+    nextUnmountedLayouts: nextMount.unmounted,
     testids: scanTestids(sourceFiles.map((f) => f.source)),
     storeHints: storeHints(dependencyNames(pkg), sourceFiles),
     foundStores: scanStores(sourceFiles, dependencyNames(pkg)),

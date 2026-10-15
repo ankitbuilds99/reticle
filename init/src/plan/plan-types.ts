@@ -188,6 +188,11 @@ export interface PlanInput {
    * when there is no top-level layout and no single group renders `/` (#1538).
    */
   nextLayoutCandidates?: readonly string[] | undefined;
+  /**
+   * The other route-group root layouts when one was chosen to mount into, that do not mount
+   * `<ReticleDev />` themselves: the routes under them render without it.
+   */
+  nextUnmountedLayouts?: readonly string[] | undefined;
   /** Where the dev-only connect component goes — never inside `pages/`, which routes on presence. */
   nextReticleDevPath?: string | undefined;
   /** What the mount file should import — a sibling for App Router, `../components/…` for Pages. */
