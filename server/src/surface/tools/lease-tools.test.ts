@@ -33,7 +33,7 @@ import type { Session } from '@/portal/session/session.js';
 import { ReticleTool } from '@reticlehq/core';
 import type { ToolDeps } from './tool-kit.js';
 import { claimedArtifactRoot } from '@/memory/project/root-claims.js';
-import type { BrowserPool, Lease } from '@/portal/pool/browser-pool.js';
+import { PoolAtCapacityError, type BrowserPool, type Lease } from '@/portal/pool/browser-pool.js';
 
 function tool(name: string): (deps: ToolDeps, args: Record<string, unknown>) => Promise<unknown> {
   const def = LEASE_TOOLS.find((t) => t.name === name);
@@ -304,6 +304,27 @@ describe('reticle_lease_acquire failure surfaces a clean message', () => {
       /could not open http:\/\/localhost:3000\/ — the page did not finish loading within 30 s \(navigation timed out\)\. If the app is running, .*retry the acquire\. If it is not running, start it first\./,
     );
     await expect(acquire).rejects.not.toThrow(/is the app running there/);
+  });
+});
+
+describe('reticle_lease_acquire at the pool cap (#1535)', () => {
+  it('asks the pool to refuse rather than queue, and passes its refusal through unchanged', async () => {
+    const seen: unknown[] = [];
+    const pool = {
+      acquire: (_url: string, opts: unknown) => {
+        seen.push(opts);
+        return Promise.reject(new PoolAtCapacityError(3));
+      },
+      leaseIdOnOrigin: () => undefined,
+      activeCount: () => 3,
+      queuedCount: () => 0,
+    } as unknown as BrowserPool;
+    await expect(
+      tool(ReticleTool.LEASE_ACQUIRE)({ ...baseDeps, pool }, { url: 'http://localhost:3000/' }),
+    ).rejects.toThrow(
+      'all 3 lease slots are in use. Release one (reticle_lease{action:"release"}, or stop a `reticle drive`), or raise RETICLE_MAX_CONTEXTS.',
+    );
+    expect(seen).toEqual([expect.objectContaining({ whenFull: 'refuse' })]);
   });
 });
 
@@ -1497,6 +1518,83 @@ describe('connectOrInject — the lease supplies an SDK only when the page never
   it('stays not-ready when there was no reader to give', async () => {
     const lease = { injectReader: () => Promise.resolve(false) };
     expect(await connectOrInject(lease, () => false, wait)).toEqual({
+      ready: false,
+      zeroInstall: false,
+    });
+  });
+
+  // #1555: a slow first dev compile holds the document past the fixed window, and the app's SDK
+  // dials in a moment later. A clock the waits advance stands in for the real 100 ms polls.
+  const clockedWait = (clock: { now: number }) => (isConnected: () => boolean) =>
+    waitForLeasedSession(
+      isConnected,
+      (ms) => {
+        clock.now += ms;
+        return Promise.resolve();
+      },
+      100,
+      100,
+    );
+
+  it('keeps waiting while the page is still loading, so an app that connects at 20.5 s is ready', async () => {
+    const clock = { now: 0 };
+    const connectsAt = 20_500;
+    const lease = {
+      injectReader: () => Promise.resolve(false),
+      isLoading: () => Promise.resolve(clock.now < connectsAt),
+    };
+    expect(await connectOrInject(lease, () => clock.now >= connectsAt, clockedWait(clock))).toEqual(
+      { ready: true, zeroInstall: false },
+    );
+  });
+
+  it('still waits after an injected reader when the page has not finished loading', async () => {
+    const clock = { now: 0 };
+    const connectsAt = 20_500;
+    const lease = {
+      injectReader: () => Promise.resolve(true),
+      isLoading: () => Promise.resolve(clock.now < connectsAt),
+    };
+    expect(await connectOrInject(lease, () => clock.now >= connectsAt, clockedWait(clock))).toEqual(
+      { ready: true, zeroInstall: true },
+    );
+  });
+
+  it('says the page is still loading instead of never dialled, and gives up within its bound', async () => {
+    const clock = { now: 0 };
+    const lease = {
+      injectReader: () => Promise.resolve(false),
+      isLoading: () => Promise.resolve(true),
+    };
+    expect(await connectOrInject(lease, () => false, clockedWait(clock), 3)).toEqual({
+      ready: false,
+      zeroInstall: false,
+      stillLoading: true,
+    });
+    // The first readiness wait plus three loading rounds, each ~10 s.
+    expect(clock.now).toBe(40_000);
+  });
+
+  it('does not wait longer for a page that finished loading', async () => {
+    const clock = { now: 0 };
+    const lease = {
+      injectReader: () => Promise.resolve(false),
+      isLoading: () => Promise.resolve(false),
+    };
+    expect(await connectOrInject(lease, () => false, clockedWait(clock))).toEqual({
+      ready: false,
+      zeroInstall: false,
+    });
+    expect(clock.now).toBe(10_000);
+  });
+
+  it('treats a page whose load state cannot be read as loaded', async () => {
+    const clock = { now: 0 };
+    const lease = {
+      injectReader: () => Promise.resolve(false),
+      isLoading: () => Promise.reject(new Error('page closed')),
+    };
+    expect(await connectOrInject(lease, () => false, clockedWait(clock))).toEqual({
       ready: false,
       zeroInstall: false,
     });
