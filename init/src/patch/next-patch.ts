@@ -263,8 +263,11 @@ const PAGE_FILE = /^page\.(tsx|ts|jsx|js|mdx)$/;
 /** `(marketing)`: a route group, which organises routes without adding a URL segment. */
 const ROUTE_GROUP = /^\(.+\)$/;
 
-/** What `findRouteGroupRootLayout` found: the layout to mount into, or the ones it could not choose between. */
-export type RouteGroupLayouts = { path: string } | { candidates: string[] };
+/**
+ * What `findRouteGroupRootLayout` found: the layout to mount into, with the other group root layouts
+ * that do not mount `<ReticleDev />`, or the ones it could not choose between.
+ */
+export type RouteGroupLayouts = { path: string; unmounted: string[] } | { candidates: string[] };
 
 type ListingIo = Pick<InitIo, 'listDirs' | 'listFiles' | 'readFile'>;
 
@@ -286,6 +289,9 @@ function servesRoot(io: ListingIo, dir: string): boolean {
  * `<ReticleDev />` (so the patch reports it already wired), else the one group that renders `/`,
  * else the only group layout there is. Several and none of those is returned as candidates, so the
  * manual step can name them rather than say there is no root layout.
+ *
+ * Each group root layout renders its own routes, so the routes under the others render without
+ * `<ReticleDev />`. Those that do not mount it already come back as `unmounted`, for init to name.
  */
 export function findRouteGroupRootLayout(io: ListingIo): RouteGroupLayouts | null {
   for (const appDir of NEXT_APP_DIRS) {
@@ -300,13 +306,20 @@ export function findRouteGroupRootLayout(io: ListingIo): RouteGroupLayouts | nul
         return layout === undefined ? [] : [{ dir, path: `${dir}/${layout}` }];
       });
     if (0 === layouts.length) continue;
-    const wired = layouts.find(
-      (l) => true === io.readFile(l.path)?.includes(RETICLE_DEV_COMPONENT),
+    const mounted = new Set(
+      layouts
+        .filter((l) => true === io.readFile(l.path)?.includes(RETICLE_DEV_COMPONENT))
+        .map((l) => l.path),
     );
-    if (wired !== undefined) return { path: wired.path };
+    const chosen = (path: string): RouteGroupLayouts => ({
+      path,
+      unmounted: layouts.map((l) => l.path).filter((p) => p !== path && !mounted.has(p)),
+    });
+    const wired = layouts.find((l) => mounted.has(l.path));
+    if (wired !== undefined) return chosen(wired.path);
     const root = layouts.filter((l) => servesRoot(io, l.dir));
-    if (1 === root.length && root[0] !== undefined) return { path: root[0].path };
-    if (1 === layouts.length && layouts[0] !== undefined) return { path: layouts[0].path };
+    if (1 === root.length && root[0] !== undefined) return chosen(root[0].path);
+    if (1 === layouts.length && layouts[0] !== undefined) return chosen(layouts[0].path);
     return { candidates: layouts.map((l) => l.path) };
   }
   return null;
@@ -327,16 +340,19 @@ export const NEXT_PAGES_APP_CANDIDATES = [
 /**
  * The file `<ReticleDev />` is mounted in: the App Router's root layout, then a route-group root
  * layout (#1538), then the Pages Router's `_app`. `candidates` is set when route groups hold several
- * root layouts and none could be chosen, so the manual step can name them.
+ * root layouts and none could be chosen, so the manual step can name them; `unmounted` names the
+ * other group root layouts when one was chosen, so init can say which routes go without it.
  */
 export function findNextMountFile(io: ListingIo & Pick<InitIo, 'exists'>): {
   path: string | null;
   candidates?: string[];
+  unmounted?: string[];
 } {
   const top = NEXT_LAYOUT_CANDIDATES.find((p) => io.exists(p));
   if (top !== undefined) return { path: top };
   const groups = findRouteGroupRootLayout(io);
-  if (groups !== null && 'path' in groups) return { path: groups.path };
+  if (groups !== null && 'path' in groups)
+    return { path: groups.path, unmounted: groups.unmounted };
   const pagesApp = NEXT_PAGES_APP_CANDIDATES.find((p) => io.exists(p)) ?? null;
   return null === groups ? { path: pagesApp } : { path: pagesApp, candidates: groups.candidates };
 }

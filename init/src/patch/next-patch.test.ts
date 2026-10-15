@@ -274,7 +274,10 @@ describe('findRouteGroupRootLayout', () => {
       'app/(site)/page.tsx': '',
       'app/(site)/about/page.tsx': '',
     });
-    expect(findRouteGroupRootLayout(io)).toEqual({ path: 'app/(site)/layout.tsx' });
+    expect(findRouteGroupRootLayout(io)).toEqual({
+      path: 'app/(site)/layout.tsx',
+      unmounted: [],
+    });
   });
 
   it('takes the group that renders / among several', () => {
@@ -284,7 +287,10 @@ describe('findRouteGroupRootLayout', () => {
       'app/(marketing)/layout.jsx': LAYOUT,
       'app/(marketing)/page.jsx': '',
     });
-    expect(findRouteGroupRootLayout(io)).toEqual({ path: 'app/(marketing)/layout.jsx' });
+    expect(findRouteGroupRootLayout(io)).toEqual({
+      path: 'app/(marketing)/layout.jsx',
+      unmounted: ['app/(dashboard)/layout.tsx'],
+    });
   });
 
   it('counts a / page inside a route group nested under the layout', () => {
@@ -294,7 +300,10 @@ describe('findRouteGroupRootLayout', () => {
       'app/(site)/layout.tsx': LAYOUT,
       'app/(site)/(home)/page.tsx': '',
     });
-    expect(findRouteGroupRootLayout(io)).toEqual({ path: 'app/(site)/layout.tsx' });
+    expect(findRouteGroupRootLayout(io)).toEqual({
+      path: 'app/(site)/layout.tsx',
+      unmounted: ['app/(app)/layout.tsx'],
+    });
   });
 
   it('prefers a group layout that already mounts ReticleDev', () => {
@@ -304,7 +313,20 @@ describe('findRouteGroupRootLayout', () => {
       'app/(site)/layout.tsx': LAYOUT,
       'app/(site)/page.tsx': '',
     });
-    expect(findRouteGroupRootLayout(io)).toEqual({ path: 'app/(app)/layout.tsx' });
+    expect(findRouteGroupRootLayout(io)).toEqual({
+      path: 'app/(app)/layout.tsx',
+      unmounted: ['app/(site)/layout.tsx'],
+    });
+  });
+
+  it('does not list a group layout that mounts ReticleDev itself', () => {
+    const io = project({
+      'app/(app)/layout.tsx': WIRED,
+      'app/(app)/settings/page.tsx': '',
+      'app/(site)/layout.tsx': WIRED,
+      'app/(site)/page.tsx': '',
+    });
+    expect(findRouteGroupRootLayout(io)).toEqual({ path: 'app/(app)/layout.tsx', unmounted: [] });
   });
 
   it('names the candidates when no single group renders /', () => {
@@ -321,7 +343,10 @@ describe('findRouteGroupRootLayout', () => {
 
   it('looks in src/app for a --src-dir app', () => {
     const io = project({ 'src/app/(site)/layout.js': LAYOUT, 'src/app/(site)/page.js': '' });
-    expect(findRouteGroupRootLayout(io)).toEqual({ path: 'src/app/(site)/layout.js' });
+    expect(findRouteGroupRootLayout(io)).toEqual({
+      path: 'src/app/(site)/layout.js',
+      unmounted: [],
+    });
   });
 
   it('answers null when there is no route-group layout, so pages/_app is still asked', () => {
