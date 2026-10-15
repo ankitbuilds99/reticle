@@ -41,7 +41,7 @@ import {
   noteOnboardingFirst,
   noteVerdictProduced,
 } from '@/telemetry/onboarding-firsts.js';
-import { DiscoveryInvite } from '@reticlehq/core';
+import { DiscoveryInvite, isPlainRecord as isPlainObject } from '@reticlehq/core';
 import { SESSION_ID_ARG, sessionIdFromArgs, spentRefFromArgs } from './tools-helpers.js';
 import { EnvelopeKey, HOST_STUB_NOTE, STEP_SHOT_TOOLS } from './tool-kit.js';
 import { ReticleTool } from '@reticlehq/core';
@@ -191,10 +191,6 @@ export const SESSION_EXEMPT_TOOLS: ReadonlySet<string> = new Set([
   // when NO session exists — "nothing ever connected" is feedback we especially want.
   ReticleTool.FEEDBACK,
 ]);
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return 'object' === typeof value && value !== null && !Array.isArray(value);
-}
 
 /**
  * Emit `verification_completed` when a verification tool produced a verdict.
