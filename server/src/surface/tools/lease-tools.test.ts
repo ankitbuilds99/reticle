@@ -178,7 +178,10 @@ describe('relevantLeaseRefusal', () => {
   it('keeps a fresh refusal from the leased project or origin', () => {
     expect(
       relevantLeaseRefusal(
-        { reason: 'matching refusal', page: { projectId: 'acme', url: 'http://other.test/' } },
+        {
+          reason: 'matching refusal',
+          page: { projectId: 'acme', url: 'http://other.test/' },
+        },
         prior,
         'acme',
         url,
