@@ -85,7 +85,7 @@ export function disabledTargetNote(pass: boolean, actResult: unknown): string | 
 /** A hidden or covered target may receive synthetic events without being user-reachable. */
 export function unreachableTargetNote(actResult: unknown): string | undefined {
   const effect = asRecord(asRecord(actResult)['effect']);
-  if (false === effect['visible'] && true !== effect['animating'] && true !== effect['hitTested']) {
+  if (false === effect['visible'] && true !== effect['animating'] && true === effect['hitTested']) {
     return UNREACHABLE_TARGET_HIDDEN_NOTE;
   }
   if (true === effect['occluded']) {

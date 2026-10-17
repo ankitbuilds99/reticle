@@ -9,10 +9,8 @@ describe('a hit-tested opacity-zero target', () => {
     ).toBeUndefined();
   });
 
-  it('still treats a hidden target without hit-test evidence as unreachable', () => {
-    expect(unreachableTargetNote({ effect: { visible: false, occluded: false } })).toMatch(
-      /hidden/,
-    );
+  it('does not classify a hidden target when no hit-test ran', () => {
+    expect(unreachableTargetNote({ effect: { visible: false, occluded: false } })).toBeUndefined();
   });
 });
 

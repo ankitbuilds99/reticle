@@ -175,7 +175,11 @@ describe('a text check that matched only hidden nodes is not a clean yes', () =>
 describe('a consequence after an unreachable action is not a clean yes', () => {
   it('does not verify a visible consequence after acting on a hidden target', async () => {
     const r = await actAndWait(
-      page([{ visible: true }], [{ visible: true }], [], { visible: false, domMutatedWithin: 1 }),
+      page([{ visible: true }], [{ visible: true }], [], {
+        visible: false,
+        hitTested: true,
+        domMutatedWithin: 1,
+      }),
       TEXT,
     );
 
@@ -187,6 +191,7 @@ describe('a consequence after an unreachable action is not a clean yes', () => {
     const r = await actAndWait(
       page([{ visible: true }], [{ visible: true }], [], {
         visible: true,
+        hitTested: true,
         occluded: true,
         domMutatedWithin: 1,
       }),
