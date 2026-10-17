@@ -68,6 +68,11 @@ export const DISABLED_TARGET_NOTE =
   'caused the declared consequence. Check why it was disabled (an empty required field, a save ' +
   'that already happened) before calling this a defect.';
 
+const UNREACHABLE_TARGET_HIDDEN_NOTE =
+  'the action target was hidden when it was acted on, so synthetic dispatch cannot prove that a user caused the declared consequence';
+const UNREACHABLE_TARGET_OCCLUDED_NOTE =
+  'the action target was covered by another element when it was acted on, so synthetic dispatch cannot prove that a user caused the declared consequence';
+
 /**
  * The page reports `enabled: false` on an act whose target was disabled at dispatch. A missed
  * consequence then says nothing about the app, so the verdict is undecided rather than "no".
@@ -81,10 +86,10 @@ export function disabledTargetNote(pass: boolean, actResult: unknown): string | 
 export function unreachableTargetNote(actResult: unknown): string | undefined {
   const effect = asRecord(asRecord(actResult)['effect']);
   if (false === effect['visible'] && true !== effect['animating'] && true !== effect['hitTested']) {
-    return 'the action target was hidden when it was acted on, so synthetic dispatch cannot prove that a user caused the declared consequence';
+    return UNREACHABLE_TARGET_HIDDEN_NOTE;
   }
   if (true === effect['occluded']) {
-    return 'the action target was covered by another element when it was acted on, so synthetic dispatch cannot prove that a user caused the declared consequence';
+    return UNREACHABLE_TARGET_OCCLUDED_NOTE;
   }
   return undefined;
 }

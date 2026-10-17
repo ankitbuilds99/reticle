@@ -129,10 +129,14 @@ const SUBMITTED = {
   predicates: [{ kind: 'net', method: 'POST', urlContains: '/submit', status: 200 }, TEXT],
 };
 
-async function actAndWait(deps: ToolDeps, until: unknown): Promise<Record<string, unknown>> {
+async function actAndWait(
+  deps: ToolDeps,
+  until: unknown,
+  action: string = 'click',
+): Promise<Record<string, unknown>> {
   const found = TOOLS.find((t) => t.name === ReticleTool.ACT_AND_WAIT);
   if (found === undefined) throw new Error('act_and_wait is not on the surface');
-  return (await found.handler(deps, { ref: 'e1', action: 'click', until })) as Record<
+  return (await found.handler(deps, { ref: 'e1', action, until })) as Record<
     string,
     unknown
   >;
@@ -201,6 +205,21 @@ describe('a consequence after an unreachable action is not a clean yes', () => {
         domMutatedWithin: 1,
       }),
       SUBMITTED,
+    );
+
+    expect(r['verified']).toBe(Verified.YES);
+    expect(r['verifiedReason']).not.toBe(VerifiedReason.UNREACHABLE_TARGET);
+  });
+
+  it('keeps a hidden file upload verified when no click hit-test ran', async () => {
+    const r = await actAndWait(
+      page([{ visible: true }], [{ visible: true }], [posted, reenabled], {
+        visible: false,
+        hitTested: false,
+        domMutatedWithin: 1,
+      }),
+      SUBMITTED,
+      'upload',
     );
 
     expect(r['verified']).toBe(Verified.YES);
